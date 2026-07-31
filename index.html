@@ -330,52 +330,101 @@ const {
   useState,
   useEffect,
   useMemo,
-  useCallback
+  useCallback,
+  useRef
 } = React;
 
 /* ---------------------------------------------------------------
-   DESIGN TOKENS
-   army green / black theme
+   DESIGN TOKENS — deux thèmes au choix (réglable dans Réglages)
 ------------------------------------------------------------------ */
 
-const COLORS = {
-  bg: "#F5ECDF",
-  surface: "#FFFDF9",
-  surface2: "#FBF2E4",
-  border: "#E9DCC6",
-  text: "#4A4038",
-  muted: "#A99A87",
-  accent: "#F0A9B4",
-  blue: "#A8CBA0",
-  danger: "#EFAE82"
+const THEMES = {
+  pastel: {
+    bg: "#F5ECDF",
+    surface: "#FFFDF9",
+    surface2: "#FBF2E4",
+    border: "#E9DCC6",
+    text: "#4A4038",
+    muted: "#A99A87",
+    accent: "#F0A9B4",
+    blue: "#A8CBA0",
+    danger: "#EFAE82"
+  },
+  sombre: {
+    bg: "#15181B",
+    surface: "#1F2327",
+    surface2: "#272C31",
+    border: "#383F45",
+    text: "#ECEFF1",
+    muted: "#8D969E",
+    accent: "#5AA9E6",
+    blue: "#6FBF73",
+    danger: "#E2574C"
+  }
 };
+
+// Objet volontairement mutable (pas de useState) : on change ses propriétés en place
+// quand le thème change, pour éviter de faire passer COLORS en props dans tout l'arbre.
+const COLORS = {
+  ...THEMES.pastel
+};
+
+// Même principe pour la langue : une variable mutable + un helper t(fr, en)
+// plutôt que de faire passer la langue en props partout.
+let LANG = "fr";
+const t = (fr, en) => LANG === "en" ? en : fr;
 const MUSCLES = ["Pectoraux", "Dos", "Épaules", "Biceps", "Triceps", "Avant-bras", "Trapèzes", "Quadriceps", "Ischio-jambiers", "Fessiers", "Mollets", "Abdominaux"];
+
+// Les valeurs françaises ci-dessus restent les clés internes (utilisées pour le matching
+// primary/secondary des exercices) — cette table ne sert qu'à l'affichage en anglais.
+const MUSCLE_LABELS_EN = {
+  "Pectoraux": "Chest",
+  "Dos": "Back",
+  "Épaules": "Shoulders",
+  "Biceps": "Biceps",
+  "Triceps": "Triceps",
+  "Avant-bras": "Forearms",
+  "Trapèzes": "Traps",
+  "Quadriceps": "Quads",
+  "Ischio-jambiers": "Hamstrings",
+  "Fessiers": "Glutes",
+  "Mollets": "Calves",
+  "Abdominaux": "Abs"
+};
+const muscleLabel = m => LANG === "en" ? MUSCLE_LABELS_EN[m] || m : m;
 const OBJECTIFS = [{
   id: "fessiers",
   label: "Prise fessiers",
+  labelEn: "Glute growth",
   muscles: ["Fessiers", "Ischio-jambiers"]
 }, {
   id: "dos",
   label: "Dos plus large",
+  labelEn: "Wider back",
   muscles: ["Dos"]
 }, {
   id: "bras",
   label: "Bras",
+  labelEn: "Arms",
   muscles: ["Biceps", "Triceps"]
 }, {
   id: "jambes",
   label: "Jambes complètes",
+  labelEn: "Full legs",
   muscles: ["Quadriceps", "Ischio-jambiers", "Fessiers", "Mollets"]
 }, {
   id: "haut",
   label: "Haut du corps",
+  labelEn: "Upper body",
   muscles: ["Pectoraux", "Dos", "Épaules", "Biceps", "Triceps"]
 }];
+const objectifLabel = o => LANG === "en" ? o.labelEn : o.label;
 
 // Séances types suggérées par objectif — prêtes à utiliser, modifiables ensuite
 const SESSION_TEMPLATES = [{
   objectifId: "fessiers",
   name: "Fessiers",
+  nameEn: "Glutes",
   exercises: [{
     exerciseId: "hip_thrust",
     sets: 4,
@@ -400,6 +449,7 @@ const SESSION_TEMPLATES = [{
 }, {
   objectifId: "dos",
   name: "Dos",
+  nameEn: "Back",
   exercises: [{
     exerciseId: "traction",
     sets: 4,
@@ -424,6 +474,7 @@ const SESSION_TEMPLATES = [{
 }, {
   objectifId: "bras",
   name: "Bras",
+  nameEn: "Arms",
   exercises: [{
     exerciseId: "curl_biceps_barre",
     sets: 3,
@@ -452,6 +503,7 @@ const SESSION_TEMPLATES = [{
 }, {
   objectifId: "jambes",
   name: "Jambes complètes",
+  nameEn: "Full legs",
   exercises: [{
     exerciseId: "squat",
     sets: 4,
@@ -480,6 +532,7 @@ const SESSION_TEMPLATES = [{
 }, {
   objectifId: "haut",
   name: "Haut du corps",
+  nameEn: "Upper body",
   exercises: [{
     exerciseId: "developpe_couche",
     sets: 4,
@@ -515,6 +568,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Fessiers"],
   type: "poly",
   tips: ["Garde le dos droit, regard vers l'avant", "Pousse sur les talons, genoux dans l'axe des pieds"],
+  nameEn: "Barbell squat",
+  tipsEn: ["Keep your back straight, look forward", "Push through your heels, knees in line with feet"],
   aliases: ["back squat", "squat arrière"]
 }, {
   id: "front_squat",
@@ -523,6 +578,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Fessiers", "Abdominaux"],
   type: "poly",
   tips: ["Coudes hauts pour caler la barre", "Buste plus vertical que le squat classique"],
+  nameEn: "Front squat",
+  tipsEn: ["High elbows to rack the bar", "More upright torso than a back squat"],
   aliases: ["squat avant"]
 }, {
   id: "squat_gobelet",
@@ -531,6 +588,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Fessiers"],
   type: "poly",
   tips: ["Tiens la charge contre la poitrine, coudes vers l'intérieur des genoux", "Descends lentement, remonte en poussant le sol"],
+  nameEn: "Goblet squat",
+  tipsEn: ["Hold the weight against your chest, elbows inside your knees", "Descend slowly, drive up through the floor"],
   aliases: ["goblet squat"]
 }, {
   id: "hack_squat",
@@ -539,6 +598,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Fessiers"],
   type: "poly",
   tips: ["Dos bien calé contre le dossier", "Ne verrouille pas les genoux en haut du mouvement"],
+  nameEn: "Hack squat",
+  tipsEn: ["Keep your back flat against the pad", "Don't lock your knees at the top"],
   aliases: []
 }, {
   id: "presse_cuisses",
@@ -547,6 +608,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Fessiers"],
   type: "poly",
   tips: ["Pieds à largeur d'épaules, pas trop haut sur le plateau", "Ne descends pas au point où le bas du dos décolle"],
+  nameEn: "Leg press",
+  tipsEn: ["Feet shoulder-width apart, not too high on the platform", "Don't go so low that your lower back lifts off"],
   aliases: ["presse à cuisses", "presse a cuisse"]
 }, {
   id: "leg_extension",
@@ -555,6 +618,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Contrôle la descente, ne lâche pas le poids", "Évite l'à-coup en haut du mouvement"],
+  nameEn: "Leg extension",
+  tipsEn: ["Control the descent, don't drop the weight", "Avoid jerking at the top of the movement"],
   aliases: ["extension quadriceps"]
 }, {
   id: "fentes",
@@ -563,6 +628,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Quadriceps"],
   type: "poly",
   tips: ["Buste droit, pas de bascule vers l'avant", "Le genou avant reste au-dessus de la cheville"],
+  nameEn: "Walking lunges",
+  tipsEn: ["Torso upright, no leaning forward", "Front knee stays above the ankle"],
   aliases: ["walking lunges", "lunges", "fentes avant"]
 }, {
   id: "fentes_arriere",
@@ -571,6 +638,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Quadriceps"],
   type: "poly",
   tips: ["Recule le pied en gardant l'équilibre", "Descends jusqu'à ce que le genou arrière frôle le sol"],
+  nameEn: "Reverse lunges",
+  tipsEn: ["Step back while keeping your balance", "Lower until the back knee nearly touches the floor"],
   aliases: ["reverse lunges"]
 }, {
   id: "squat_bulgare",
@@ -579,6 +648,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Quadriceps"],
   type: "poly",
   tips: ["Pied arrière surélevé, poids sur la jambe avant", "Descends à la verticale, sans partir vers l'avant"],
+  nameEn: "Bulgarian split squat",
+  tipsEn: ["Rear foot elevated, weight on the front leg", "Descend vertically, don't lean forward"],
   aliases: ["bulgarian split squat", "fentes bulgares"]
 }, {
   id: "step_up",
@@ -587,6 +658,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Fessiers"],
   type: "poly",
   tips: ["Pousse avec le talon du pied sur le banc", "Évite l'élan avec la jambe au sol"],
+  nameEn: "Step-up",
+  tipsEn: ["Drive through the heel on the bench", "Avoid using momentum from the grounded leg"],
   aliases: ["montée sur banc"]
 }, {
   id: "sissy_squat",
@@ -595,6 +668,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Bascule le bassin vers l'avant en descendant", "Garde les hanches en extension tout du long"],
+  nameEn: "Sissy squat",
+  tipsEn: ["Tilt the pelvis forward as you descend", "Keep the hips extended throughout"],
   aliases: []
 },
 // --- ISCHIO-JAMBIERS ---
@@ -605,6 +680,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Fessiers", "Dos"],
   type: "poly",
   tips: ["Dos plat, barre proche des tibias", "Pousse le sol avec les jambes, ne tire pas avec le dos"],
+  nameEn: "Deadlift",
+  tipsEn: ["Flat back, bar close to the shins", "Push the floor away with your legs, don't pull with your back"],
   aliases: ["deadlift", "soulevé de terre conventionnel"]
 }, {
   id: "souleve_terre_sumo",
@@ -613,6 +690,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Fessiers", "Quadriceps"],
   type: "poly",
   tips: ["Pieds larges, pointes de pieds vers l'extérieur", "Genoux dans l'axe des pieds pendant toute la montée"],
+  nameEn: "Sumo deadlift",
+  tipsEn: ["Wide stance, toes pointed outward", "Knees track over the feet throughout the pull"],
   aliases: ["sumo deadlift"]
 }, {
   id: "souleve_terre_jambes_tendues",
@@ -621,6 +700,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Fessiers"],
   type: "poly",
   tips: ["Genoux légèrement fléchis, fixes", "Recule les hanches en gardant la barre proche du corps"],
+  nameEn: "Romanian deadlift (RDL)",
+  tipsEn: ["Knees slightly bent and fixed", "Push hips back while keeping the bar close to your body"],
   aliases: ["rdl", "romanian deadlift", "soulevé de terre roumain"]
 }, {
   id: "good_morning",
@@ -629,6 +710,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Fessiers", "Dos"],
   type: "poly",
   tips: ["Charge légère au début, mouvement technique", "Bascule le buste depuis les hanches, dos neutre"],
+  nameEn: "Good morning",
+  tipsEn: ["Start light, it's a technical movement", "Hinge from the hips, neutral spine"],
   aliases: []
 }, {
   id: "leg_curl",
@@ -637,6 +720,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Contracte les ischios en fin de mouvement", "Évite de décoller les hanches du banc"],
+  nameEn: "Leg curl",
+  tipsEn: ["Squeeze the hamstrings at the end of the movement", "Avoid lifting your hips off the bench"],
   aliases: ["ischio poulie", "leg curl allongé", "leg curl assis"]
 }, {
   id: "nordic_curl",
@@ -645,6 +730,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Descends le plus lentement possible", "Fais-toi aider au début, mouvement exigeant"],
+  nameEn: "Nordic curl",
+  tipsEn: ["Lower yourself as slowly as possible", "Get help at first, it's a demanding movement"],
   aliases: ["nordic hamstring curl"]
 },
 // --- FESSIERS ---
@@ -655,6 +742,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Ischio-jambiers"],
   type: "poly",
   tips: ["Dos calé sur le banc, menton rentré", "Contracte fort les fessiers en haut, évite l'hyperextension lombaire"],
+  nameEn: "Hip thrust",
+  tipsEn: ["Back braced on the bench, chin tucked", "Squeeze your glutes hard at the top, avoid arching your lower back"],
   aliases: ["hip thrust barre"]
 }, {
   id: "pont_fessier",
@@ -663,6 +752,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Ischio-jambiers"],
   type: "isolation",
   tips: ["Pousse par les talons", "Serre les fessiers en haut sans cambrer le bas du dos"],
+  nameEn: "Glute bridge",
+  tipsEn: ["Push through your heels", "Squeeze your glutes at the top without arching your lower back"],
   aliases: ["glute bridge"]
 }, {
   id: "abduction_hanches",
@@ -671,6 +762,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Dos bien calé contre le dossier", "Mouvement contrôlé, pas d'à-coup"],
+  nameEn: "Hip abduction (machine)",
+  tipsEn: ["Back braced against the pad", "Controlled movement, no jerking"],
   aliases: ["hip abduction", "écarteur de hanches"]
 }, {
   id: "kickback_fessier",
@@ -679,6 +772,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Garde le dos gainé, pas de cambrure", "Vise le fessier, pas la jambe qui pousse"],
+  nameEn: "Glute kickback (cable)",
+  tipsEn: ["Keep your back braced, no arching", "Focus on the glute, not the pushing leg"],
   aliases: ["kickback", "kick back", "glute kickback", "kicks back"]
 }, {
   id: "squat_sumo",
@@ -687,6 +782,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Quadriceps"],
   type: "poly",
   tips: ["Pieds larges, genoux orientés vers l'extérieur", "Descends bien entre les jambes"],
+  nameEn: "Sumo squat",
+  tipsEn: ["Wide stance, knees pointed outward", "Descend well between your legs"],
   aliases: ["sumo squat"]
 },
 // --- MOLLETS ---
@@ -697,6 +794,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Amplitude complète, étirement en bas", "Marque une pause en haut du mouvement"],
+  nameEn: "Standing calf raise",
+  tipsEn: ["Full range of motion, stretch at the bottom", "Pause at the top of the movement"],
   aliases: ["calf raise", "standing calf raise", "mollets à la machine debout"]
 }, {
   id: "mollets_assis",
@@ -705,6 +804,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Cible plus le soléaire, genoux fléchis", "Contrôle la phase descendante"],
+  nameEn: "Seated calf raise",
+  tipsEn: ["Targets the soleus more, knees bent", "Control the descending phase"],
   aliases: ["seated calf raise"]
 }, {
   id: "mollets_presse",
@@ -713,6 +814,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Ne verrouille pas les genoux", "Amplitude complète pour bien travailler le mollet"],
+  nameEn: "Calf raise on leg press",
+  tipsEn: ["Don't lock your knees", "Full range of motion to properly work the calf"],
   aliases: ["leg press calf raise"]
 },
 // --- PECTORAUX ---
@@ -723,6 +826,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Triceps", "Épaules"],
   type: "poly",
   tips: ["Omoplates serrées, pieds ancrés au sol", "Descends la barre au niveau de la poitrine sans rebond"],
+  nameEn: "Barbell bench press",
+  tipsEn: ["Shoulder blades pinched, feet planted", "Lower the bar to your chest without bouncing"],
   aliases: ["bench press", "développé couché"]
 }, {
   id: "developpe_couche_halteres",
@@ -731,6 +836,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Triceps", "Épaules"],
   type: "poly",
   tips: ["Trajectoire légèrement arquée", "Contrôle la descente jusqu'à l'étirement"],
+  nameEn: "Dumbbell bench press",
+  tipsEn: ["Slightly arched path", "Control the descent down to a full stretch"],
   aliases: ["dumbbell bench press"]
 }, {
   id: "developpe_incline",
@@ -739,6 +846,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Épaules"],
   type: "poly",
   tips: ["Banc à 30-45°, pas plus haut", "Coudes ni trop écartés ni trop collés"],
+  nameEn: "Incline dumbbell press",
+  tipsEn: ["Bench at 30-45°, no higher", "Elbows neither too flared nor too tucked"],
   aliases: ["incline bench", "incline dumbbell press"]
 }, {
   id: "developpe_incline_barre",
@@ -747,6 +856,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Épaules"],
   type: "poly",
   tips: ["Même trajectoire que couché, angle en plus", "Garde les poignets alignés avec les avant-bras"],
+  nameEn: "Incline barbell press",
+  tipsEn: ["Same path as flat bench, plus an angle", "Keep your wrists aligned with your forearms"],
   aliases: ["incline barbell press"]
 }, {
   id: "developpe_decline",
@@ -755,6 +866,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Triceps"],
   type: "poly",
   tips: ["Sécurise bien la barre avant de commencer", "Amplitude un peu réduite, cible le bas des pecs"],
+  nameEn: "Decline bench press",
+  tipsEn: ["Secure the bar well before starting", "Slightly reduced range, targets the lower chest"],
   aliases: ["decline bench press"]
 }, {
   id: "ecarte_couche",
@@ -763,6 +876,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Coudes légèrement fléchis tout du long", "Pense à un mouvement d'accolade plutôt qu'à pousser"],
+  nameEn: "Dumbbell fly",
+  tipsEn: ["Elbows slightly bent throughout", "Think of hugging a barrel rather than pressing"],
   aliases: ["dumbbell fly", "fly haltères"]
 }, {
   id: "ecarte_poulie",
@@ -771,6 +886,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Buste légèrement penché en avant", "Croise les mains en fin de mouvement pour bien contracter"],
+  nameEn: "Cable crossover",
+  tipsEn: ["Torso slightly leaning forward", "Cross your hands at the end to fully contract"],
   aliases: ["cable crossover", "cable fly", "poulie vis-à-vis"]
 }, {
   id: "pec_deck",
@@ -779,6 +896,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Dos plaqué au dossier", "Contraction maximale en fin de mouvement, pas d'à-coup"],
+  nameEn: "Pec deck",
+  tipsEn: ["Back flat against the pad", "Maximum contraction at the end, no jerking"],
   aliases: ["butterfly", "papillon machine"]
 }, {
   id: "pompes",
@@ -787,6 +906,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Triceps", "Épaules"],
   type: "poly",
   tips: ["Corps gainé, aligné de la tête aux pieds", "Coudes à environ 45° du corps"],
+  nameEn: "Push-up",
+  tipsEn: ["Body braced, aligned from head to feet", "Elbows at about 45° from your body"],
   aliases: ["push up", "push-up"]
 },
 // --- DOS ---
@@ -797,6 +918,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Biceps"],
   type: "poly",
   tips: ["Épaules basses avant de tirer", "Menton au-dessus de la barre, descente contrôlée"],
+  nameEn: "Pull-up",
+  tipsEn: ["Shoulders down before pulling", "Chin above the bar, controlled descent"],
   aliases: ["pull up", "pull-up", "traction pronation"]
 }, {
   id: "traction_supination",
@@ -805,6 +928,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Biceps"],
   type: "poly",
   tips: ["Sollicite plus les biceps que la prise pronation", "Évite de te balancer pour tricher"],
+  nameEn: "Chin-up",
+  tipsEn: ["Targets the biceps more than an overhand grip", "Avoid swinging to cheat the movement"],
   aliases: ["chin up", "chin-up"]
 }, {
   id: "tirage_vertical",
@@ -813,6 +938,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Biceps"],
   type: "poly",
   tips: ["Tire avec les coudes, pas avec les mains", "Buste léger en arrière, pas de à-coups"],
+  nameEn: "Lat pulldown",
+  tipsEn: ["Pull with your elbows, not your hands", "Torso slightly back, no jerking"],
   aliases: ["lat pulldown", "tirage poitrine"]
 }, {
   id: "tirage_vertical_serre",
@@ -821,6 +948,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Biceps"],
   type: "poly",
   tips: ["Prise resserrée, cible le milieu du dos", "Amène la barre vers le haut de la poitrine"],
+  nameEn: "Close-grip pulldown",
+  tipsEn: ["Narrow grip, targets the mid-back", "Bring the bar to the top of your chest"],
   aliases: ["close grip pulldown"]
 }, {
   id: "tirage_horizontal",
@@ -829,6 +958,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Biceps"],
   type: "poly",
   tips: ["Dos droit, ne t'arrondis pas en tirant", "Ramène les coudes vers l'arrière, omoplates rapprochées"],
+  nameEn: "Seated cable row",
+  tipsEn: ["Straight back, don't round it while pulling", "Drive your elbows back, squeeze your shoulder blades"],
   aliases: ["seated row", "row horizontal", "tirage poulie basse"]
 }, {
   id: "rowing_barre",
@@ -837,6 +968,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Biceps"],
   type: "poly",
   tips: ["Buste penché, dos plat, pas rond", "Tire la barre vers le nombril"],
+  nameEn: "Barbell row",
+  tipsEn: ["Torso bent, flat back, not rounded", "Pull the bar toward your navel"],
   aliases: ["barbell row"]
 }, {
   id: "rowing_halteres",
@@ -845,6 +978,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Biceps"],
   type: "poly",
   tips: ["Appui sur le banc, dos parallèle au sol", "Tire le coude vers le plafond, pas vers l'arrière"],
+  nameEn: "Single-arm dumbbell row",
+  tipsEn: ["Support on the bench, back parallel to the floor", "Pull your elbow toward the ceiling, not backward"],
   aliases: ["single arm dumbbell row", "rowing unilatéral"]
 }, {
   id: "rowing_t_bar",
@@ -853,6 +988,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Biceps"],
   type: "poly",
   tips: ["Poitrine appuyée si le banc le permet", "Tire vers le buste, coudes proches du corps"],
+  nameEn: "T-bar row",
+  tipsEn: ["Chest supported if the bench allows it", "Pull toward your torso, elbows close to your body"],
   aliases: ["t-bar row"]
 }, {
   id: "pull_over",
@@ -861,6 +998,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Pectoraux"],
   type: "isolation",
   tips: ["Bras presque tendus, mouvement large", "Sens l'étirement de la cage thoracique en bas"],
+  nameEn: "Pullover",
+  tipsEn: ["Arms nearly straight, wide movement", "Feel the stretch in your rib cage at the bottom"],
   aliases: ["pullover"]
 }, {
   id: "extension_lombaire",
@@ -869,6 +1008,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Fessiers", "Ischio-jambiers"],
   type: "isolation",
   tips: ["Ne cambre pas excessivement en haut", "Mouvement contrôlé, pense aux fessiers pour aider"],
+  nameEn: "Back extension",
+  tipsEn: ["Don't arch excessively at the top", "Controlled movement, let your glutes help"],
   aliases: ["hyperextension", "banc à lombaires"]
 }, {
   id: "face_pull",
@@ -877,6 +1018,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Dos"],
   type: "isolation",
   tips: ["Coudes hauts, tire vers le visage", "Excellent pour la posture, à ne pas négliger"],
+  nameEn: "Face pull",
+  tipsEn: ["High elbows, pull toward your face", "Excellent for posture, don't neglect it"],
   aliases: []
 },
 // --- ÉPAULES ---
@@ -887,6 +1030,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Triceps"],
   type: "poly",
   tips: ["Gainage serré, pas de cambrure lombaire", "Pousse la tête légèrement en avant en fin de mouvement"],
+  nameEn: "Overhead press",
+  tipsEn: ["Tight core, no lower-back arch", "Push your head slightly forward at the top"],
   aliases: ["overhead press", "military press", "développé épaules barre"]
 }, {
   id: "developpe_halteres",
@@ -895,6 +1040,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Triceps"],
   type: "poly",
   tips: ["Coudes légèrement devant le buste", "Ne descends pas trop bas si les épaules tirent"],
+  nameEn: "Dumbbell shoulder press",
+  tipsEn: ["Elbows slightly in front of your torso", "Don't go too low if your shoulders pull"],
   aliases: ["shoulder press", "dumbbell shoulder press"]
 }, {
   id: "developpe_arnold",
@@ -903,6 +1050,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Triceps"],
   type: "poly",
   tips: ["Rotation des poignets pendant la montée", "Mouvement fluide, pas saccadé"],
+  nameEn: "Arnold press",
+  tipsEn: ["Rotate your wrists as you press up", "Smooth movement, not jerky"],
   aliases: ["arnold press"]
 }, {
   id: "elevation_laterale",
@@ -911,6 +1060,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Légère flexion des coudes, pas de balancier", "Monte jusqu'à hauteur d'épaule, pas plus haut"],
+  nameEn: "Lateral raise",
+  tipsEn: ["Slight elbow bend, no swinging", "Raise to shoulder height, not higher"],
   aliases: ["lateral raise"]
 }, {
   id: "elevation_frontale",
@@ -919,6 +1070,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Un bras ou les deux, mouvement contrôlé", "Ne monte pas au-dessus de l'horizontale"],
+  nameEn: "Front raise",
+  tipsEn: ["One arm or both, controlled movement", "Don't raise above horizontal"],
   aliases: ["front raise"]
 }, {
   id: "oiseau",
@@ -927,6 +1080,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Dos"],
   type: "isolation",
   tips: ["Buste penché, dos plat", "Coudes légèrement fléchis, vise l'arrière de l'épaule"],
+  nameEn: "Reverse fly",
+  tipsEn: ["Torso bent, flat back", "Elbows slightly bent, target the rear delt"],
   aliases: ["rear delt fly", "reverse fly"]
 }, {
   id: "tirage_menton",
@@ -935,6 +1090,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Trapèzes"],
   type: "isolation",
   tips: ["Coudes toujours au-dessus des mains", "Prise pas trop serrée pour préserver les épaules"],
+  nameEn: "Upright row",
+  tipsEn: ["Elbows always above your hands", "Grip not too narrow to protect your shoulders"],
   aliases: ["upright row"]
 },
 // --- TRAPÈZES ---
@@ -945,6 +1102,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Monte les épaules vers les oreilles, pas de rotation", "Marque une pause en haut"],
+  nameEn: "Shrugs",
+  tipsEn: ["Raise your shoulders toward your ears, no rotation", "Pause at the top"],
   aliases: ["shrugs", "shrug barre", "shrug haltères"]
 },
 // --- BICEPS ---
@@ -955,6 +1114,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Coudes fixes le long du corps", "Évite l'élan du bassin pour tricher"],
+  nameEn: "Barbell curl",
+  tipsEn: ["Elbows fixed at your sides", "Avoid swinging your hips to cheat"],
   aliases: ["barbell curl", "curl biceps"]
 }, {
   id: "curl_biceps_halteres",
@@ -963,6 +1124,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Supination complète en montant", "Contrôle la descente, ne la laisse pas tomber"],
+  nameEn: "Dumbbell curl",
+  tipsEn: ["Full supination as you curl up", "Control the descent, don't let it drop"],
   aliases: ["dumbbell curl"]
 }, {
   id: "curl_marteau",
@@ -971,6 +1134,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Avant-bras"],
   type: "isolation",
   tips: ["Prise neutre, paumes face à face", "Sollicite aussi l'avant-bras"],
+  nameEn: "Hammer curl",
+  tipsEn: ["Neutral grip, palms facing each other", "Also works the forearm"],
   aliases: ["hammer curl"]
 }, {
   id: "curl_pupitre",
@@ -979,6 +1144,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Bras bien calés sur le pupitre", "Ne verrouille pas les coudes en bas"],
+  nameEn: "Preacher curl",
+  tipsEn: ["Arms well supported on the pad", "Don't lock your elbows at the bottom"],
   aliases: ["preacher curl", "curl larry scott"]
 }, {
   id: "curl_poulie",
@@ -987,6 +1154,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Tension constante grâce à la poulie", "Garde les coudes fixes"],
+  nameEn: "Cable curl",
+  tipsEn: ["Constant tension thanks to the cable", "Keep your elbows fixed"],
   aliases: ["cable curl"]
 }, {
   id: "curl_concentre",
@@ -995,6 +1164,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Coude calé contre l'intérieur de la cuisse", "Concentre-toi sur la contraction complète"],
+  nameEn: "Concentration curl",
+  tipsEn: ["Elbow braced against the inside of your thigh", "Focus on a full contraction"],
   aliases: ["concentration curl"]
 },
 // --- TRICEPS ---
@@ -1005,6 +1176,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Coudes collés au corps, immobiles", "Extension complète sans verrouiller brutalement"],
+  nameEn: "Cable pushdown",
+  tipsEn: ["Elbows glued to your sides, still", "Full extension without locking out harshly"],
   aliases: ["tricep pushdown", "extension poulie haute"]
 }, {
   id: "barre_au_front",
@@ -1013,6 +1186,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Descends la barre vers le front, pas le cou", "Coudes fixes, seul l'avant-bras bouge"],
+  nameEn: "Skull crusher",
+  tipsEn: ["Lower the bar toward your forehead, not your neck", "Elbows fixed, only the forearm moves"],
   aliases: ["skull crusher", "french press", "extension triceps allongé"]
 }, {
   id: "extension_triceps_tete",
@@ -1021,6 +1196,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Coudes pointés vers le plafond", "Bonne étirement en bas du mouvement"],
+  nameEn: "Overhead triceps extension",
+  tipsEn: ["Elbows pointed at the ceiling", "Good stretch at the bottom of the movement"],
   aliases: ["overhead triceps extension"]
 }, {
   id: "kickback_triceps",
@@ -1029,6 +1206,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Bras à l'horizontale avant d'étendre", "Seul l'avant-bras bouge, le coude reste fixe"],
+  nameEn: "Triceps kickback",
+  tipsEn: ["Arm horizontal before extending", "Only the forearm moves, elbow stays fixed"],
   aliases: ["tricep kickback"]
 }, {
   id: "dips",
@@ -1037,6 +1216,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Pectoraux"],
   type: "poly",
   tips: ["Buste penché en avant pour cibler les pecs", "Buste droit pour cibler plus les triceps"],
+  nameEn: "Dips",
+  tipsEn: ["Lean forward to target the chest", "Stay upright to target the triceps more"],
   aliases: []
 }, {
   id: "developpe_couche_serre",
@@ -1045,6 +1226,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Pectoraux"],
   type: "poly",
   tips: ["Prise resserrée, coudes proches du corps", "Cible bien les triceps en fin de mouvement"],
+  nameEn: "Close-grip bench press",
+  tipsEn: ["Narrow grip, elbows close to your body", "Really targets the triceps at the end of the movement"],
   aliases: ["close grip bench press"]
 },
 // --- AVANT-BRAS ---
@@ -1055,6 +1238,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Amplitude complète, mouvement lent", "Avant-bras posés et stables"],
+  nameEn: "Wrist curl",
+  tipsEn: ["Full range of motion, slow movement", "Forearms resting and stable"],
   aliases: ["wrist curl"]
 }, {
   id: "farmer_walk",
@@ -1063,6 +1248,8 @@ const EXERCISE_LIBRARY = [
   secondary: ["Trapèzes"],
   type: "poly",
   tips: ["Épaules basses, gainage serré", "Marche à pas contrôlés, pas de précipitation"],
+  nameEn: "Farmer's walk",
+  tipsEn: ["Shoulders down, core braced", "Controlled steps, no rushing"],
   aliases: ["marche du fermier"]
 },
 // --- ABDOMINAUX ---
@@ -1073,6 +1260,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Corps aligné, pas de bassin qui tombe", "Respire normalement, ne bloque pas ta respiration"],
+  nameEn: "Plank",
+  tipsEn: ["Body aligned, hips not sagging", "Breathe normally, don't hold your breath"],
   aliases: ["plank"]
 }, {
   id: "crunch",
@@ -1081,6 +1270,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Décolle les épaules, pas tout le dos", "Évite de tirer sur la nuque avec les mains"],
+  nameEn: "Crunch",
+  tipsEn: ["Lift your shoulders, not your whole back", "Avoid pulling on your neck with your hands"],
   aliases: []
 }, {
   id: "crunch_poulie",
@@ -1089,6 +1280,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Fléchis depuis les hanches vers le bas", "Garde la tension sur les abdos, pas les bras"],
+  nameEn: "Cable crunch",
+  tipsEn: ["Flex from the hips downward", "Keep the tension on your abs, not your arms"],
   aliases: ["cable crunch"]
 }, {
   id: "releve_jambes",
@@ -1097,6 +1290,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Bas du dos plaqué au sol ou au banc", "Contrôle la descente des jambes"],
+  nameEn: "Leg raise",
+  tipsEn: ["Lower back pressed to the floor or bench", "Control the descent of your legs"],
   aliases: ["leg raise"]
 }, {
   id: "russian_twist",
@@ -1105,6 +1300,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Buste légèrement incliné en arrière", "Rotation contrôlée, pas de à-coups"],
+  nameEn: "Russian twist",
+  tipsEn: ["Torso slightly leaned back", "Controlled rotation, no jerking"],
   aliases: ["rotation russe"]
 }, {
   id: "roue_abdo",
@@ -1113,6 +1310,8 @@ const EXERCISE_LIBRARY = [
   secondary: [],
   type: "isolation",
   tips: ["Commence à genoux, amplitude progressive", "Garde le dos gainé, évite de cambrer"],
+  nameEn: "Ab wheel rollout",
+  tipsEn: ["Start on your knees, progress the range gradually", "Keep your back braced, avoid arching"],
   aliases: ["ab wheel", "ab roller"]
 }];
 function normalize(str) {
@@ -1126,10 +1325,16 @@ function matchesSearch(ex, search) {
 function getAllExercises(custom = []) {
   return [...EXERCISE_LIBRARY, ...custom];
 }
+
+// Nom / conseils affichés selon la langue active (les données restent en français en interne,
+// nameEn/tipsEn ne sont présents que sur la bibliothèque intégrée, pas les exercices persos).
+const exName = ex => ex ? LANG === "en" && ex.nameEn ? ex.nameEn : ex.name : "";
+const exTips = ex => ex ? (LANG === "en" && ex.tipsEn ? ex.tipsEn : ex.tips) || [] : [];
 function exerciseVideoSearchUrl(exerciseName) {
   // youtube.com/results est souvent intercepté par l'appli YouTube qui ignore la recherche
   // et ouvre l'accueil. Une recherche Google évite ce problème et affiche les vidéos directement.
-  return "https://www.google.com/search?q=" + encodeURIComponent(exerciseName + " exercice technique musculation") + "&tbm=vid";
+  const suffix = LANG === "en" ? " exercise proper form technique" : " exercice technique musculation";
+  return "https://www.google.com/search?q=" + encodeURIComponent(exerciseName + suffix) + "&tbm=vid";
 }
 const uid = () => Math.random().toString(36).slice(2, 10);
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -1140,7 +1345,9 @@ const fmtDate = iso => new Date(iso).toLocaleDateString("fr-FR", {
 const DEFAULT_SETTINGS = {
   unit: "kg",
   defaultIncrement: 2.5,
-  referenceWeight: 65
+  referenceWeight: 65,
+  theme: "pastel",
+  lang: "fr"
 };
 const STORAGE_PREFIX = "fitcoach_";
 
@@ -1169,7 +1376,67 @@ async function saveKey(key, value) {
 /* ---------------------------------------------------------------
    PHRASES DE MOTIVATION DU JOUR
 ------------------------------------------------------------------ */
-const MOTIVATION_QUOTES = ["Fais de ton mieux aujourd'hui, le reste suivra 🌸", "Chaque petit pas compte, sois fière du chemin parcouru 🌷", "Ton corps t'écoute, sois douce et sois régulière 💫", "Aujourd'hui est une nouvelle occasion de prendre soin de toi 🌼", "Avance à ton rythme, il n'y a pas de course 🎈", "Tu n'as pas besoin d'être parfaite, juste présente 🍑", "Célèbre chaque petite victoire, elles s'additionnent 🌟", "Ton énergie d'aujourd'hui construit ta force de demain ☀️", "Sois fière de te montrer, même les jours difficiles 🦋", "Chaque séance est un cadeau que tu te fais 🎀", "La régularité est un acte d'amour envers toi-même 💕", "Respire, avance, et fais-toi confiance 🌿", "Un jour à la fois, une séance à la fois 🍓", "Tu progresses même quand tu ne le vois pas encore 🌈", "Prends soin de ton corps, il t'accompagne toute la vie 🩷", "Ce n'est pas grave d'avancer doucement, l'important c'est d'avancer 🌺", "Sois gentille avec toi-même, la motivation va et vient 🍀", "Chaque effort compte, même le plus petit 🌻", "Aujourd'hui, choisis-toi 💖", "Tu mérites de te sentir bien dans ton corps 🌙"];
+const MOTIVATION_QUOTES = [{
+  fr: "Fais de ton mieux aujourd'hui, le reste suivra 🌸",
+  en: "Do your best today, the rest will follow 🌸"
+}, {
+  fr: "Chaque petit pas compte, sois fière du chemin parcouru 🌷",
+  en: "Every small step counts, be proud of how far you've come 🌷"
+}, {
+  fr: "Ton corps t'écoute, sois douce et sois régulière 💫",
+  en: "Your body is listening, be gentle and be consistent 💫"
+}, {
+  fr: "Aujourd'hui est une nouvelle occasion de prendre soin de toi 🌼",
+  en: "Today is a new chance to take care of yourself 🌼"
+}, {
+  fr: "Avance à ton rythme, il n'y a pas de course 🎈",
+  en: "Go at your own pace, there's no race 🎈"
+}, {
+  fr: "Tu n'as pas besoin d'être parfaite, juste présente 🍑",
+  en: "You don't need to be perfect, just present 🍑"
+}, {
+  fr: "Célèbre chaque petite victoire, elles s'additionnent 🌟",
+  en: "Celebrate every small win, they add up 🌟"
+}, {
+  fr: "Ton énergie d'aujourd'hui construit ta force de demain ☀️",
+  en: "Today's energy builds tomorrow's strength ☀️"
+}, {
+  fr: "Sois fière de te montrer, même les jours difficiles 🦋",
+  en: "Be proud of showing up, even on hard days 🦋"
+}, {
+  fr: "Chaque séance est un cadeau que tu te fais 🎀",
+  en: "Every session is a gift you give yourself 🎀"
+}, {
+  fr: "La régularité est un acte d'amour envers toi-même 💕",
+  en: "Consistency is an act of self-love 💕"
+}, {
+  fr: "Respire, avance, et fais-toi confiance 🌿",
+  en: "Breathe, move forward, and trust yourself 🌿"
+}, {
+  fr: "Un jour à la fois, une séance à la fois 🍓",
+  en: "One day at a time, one session at a time 🍓"
+}, {
+  fr: "Tu progresses même quand tu ne le vois pas encore 🌈",
+  en: "You're progressing even when you can't see it yet 🌈"
+}, {
+  fr: "Prends soin de ton corps, il t'accompagne toute la vie 🩷",
+  en: "Take care of your body, it's with you for life 🩷"
+}, {
+  fr: "Ce n'est pas grave d'avancer doucement, l'important c'est d'avancer 🌺",
+  en: "It's okay to move slowly, what matters is moving forward 🌺"
+}, {
+  fr: "Sois gentille avec toi-même, la motivation va et vient 🍀",
+  en: "Be kind to yourself, motivation comes and goes 🍀"
+}, {
+  fr: "Chaque effort compte, même le plus petit 🌻",
+  en: "Every effort counts, even the smallest one 🌻"
+}, {
+  fr: "Aujourd'hui, choisis-toi 💖",
+  en: "Today, choose yourself 💖"
+}, {
+  fr: "Tu mérites de te sentir bien dans ton corps 🌙",
+  en: "You deserve to feel good in your body 🌙"
+}];
 function dayOfYear(date) {
   const start = new Date(date.getFullYear(), 0, 0);
   const diff = date - start;
@@ -1177,7 +1444,8 @@ function dayOfYear(date) {
 }
 function motivationOfTheDay() {
   const idx = dayOfYear(new Date()) % MOTIVATION_QUOTES.length;
-  return MOTIVATION_QUOTES[idx];
+  const q = MOTIVATION_QUOTES[idx];
+  return LANG === "en" ? q.en : q.fr;
 }
 
 /* ---------------------------------------------------------------
@@ -1201,7 +1469,7 @@ function suggestNextWeight(entry, logs) {
     return {
       weight: entry.weight,
       direction: "same",
-      reason: "Première séance sur cet exercice."
+      reason: t("Première séance sur cet exercice.", "First session on this exercise.")
     };
   }
   const last = history[0];
@@ -1213,14 +1481,14 @@ function suggestNextWeight(entry, logs) {
     return {
       weight: Math.round((last.weight + step) * 10) / 10,
       direction: "up",
-      reason: `Toutes les séries réussies à ${last.weight}${""}, ressenti facile.`
+      reason: t(`Toutes les séries réussies à ${last.weight}, ressenti facile.`, `All sets completed at ${last.weight}, felt easy.`)
     };
   }
   if (allDone && rpe === 4) {
     return {
       weight: Math.round((last.weight + step / 2) * 10) / 10,
       direction: "up",
-      reason: "Séries réussies mais ressenti difficile — petite augmentation."
+      reason: t("Séries réussies mais ressenti difficile — petite augmentation.", "Sets completed but felt hard — small increase.")
     };
   }
   // check 2 consecutive fails -> deload
@@ -1231,13 +1499,13 @@ function suggestNextWeight(entry, logs) {
     return {
       weight: Math.round(last.weight * 0.9 * 10) / 10,
       direction: "down",
-      reason: "Échec sur 2 séances de suite — on redescend un peu (deload)."
+      reason: t("Échec sur 2 séances de suite — on redescend un peu (deload).", "Failed 2 sessions in a row — dropping down slightly (deload).")
     };
   }
   return {
     weight: last.weight,
     direction: "same",
-    reason: failedLast ? "Reps non atteintes la dernière fois — on reste au même poids." : "On stabilise ce poids."
+    reason: failedLast ? t("Reps non atteintes la dernière fois — on reste au même poids.", "Reps not reached last time — staying at the same weight.") : t("On stabilise ce poids.", "Holding steady at this weight.")
   };
 }
 function suggestRestSeconds(exerciseId, targetReps, rpe = 3, custom = []) {
@@ -1251,6 +1519,29 @@ function suggestRestSeconds(exerciseId, targetReps, rpe = 3, custom = []) {
   }
   if (rpe >= 4) base += 30; // ressenti difficile -> plus de repos
   return Math.max(45, Math.min(240, base));
+}
+
+// Vibration + bip sonore quand le repos se termine, pour ne pas rater la fin
+// si le téléphone n'est pas sous les yeux.
+function playRestEndAlert() {
+  try {
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+  } catch {}
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.4);
+  } catch {}
 }
 
 // Estimation des calories brûlées : formule MET standard (American College of Sports Medicine)
@@ -1290,6 +1581,65 @@ function personalRecord(logs, exerciseId) {
     }
   }));
   return pr;
+}
+
+// Estimation de 1RM (formule d'Epley, la plus courante) : 1RM = poids × (1 + reps/30)
+// Estimation seulement — jamais une mesure réelle, à prendre comme repère indicatif.
+function estimatedOneRepMax(logs, exerciseId) {
+  let best = 0;
+  logs.forEach(log => log.entries.forEach(e => {
+    if (e.exerciseId !== exerciseId) return;
+    e.setsDone.forEach(s => {
+      if (!s.completed) return;
+      const reps = parseInt(s.reps) || 0;
+      if (reps <= 0) return;
+      const est = e.weight * (1 + reps / 30);
+      if (est > best) best = est;
+    });
+  }));
+  return Math.round(best * 10) / 10;
+}
+function daysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+// Régularité : nombre de séances cette semaine + série de jours consécutifs avec au moins
+// une séance ou une course, + un mini calendrier des 7 derniers jours.
+function weeklyConsistency(logs, runs) {
+  const allDates = new Set([...logs.map(l => l.date), ...runs.map(r => r.date)]);
+  const last7 = Array.from({
+    length: 7
+  }, (_, i) => daysAgo(6 - i));
+  const daysWithActivity = last7.map(d => allDates.has(d));
+  const thisWeekCount = last7.filter(d => allDates.has(d)).length;
+  let streak = 0;
+  for (let i = 0; i < 365; i++) {
+    if (allDates.has(daysAgo(i))) streak++;else break;
+  }
+  return {
+    last7,
+    daysWithActivity,
+    thisWeekCount,
+    streak
+  };
+}
+
+// Volume (nombre de séries validées) par groupe musculaire sur les 7 derniers jours
+function weeklyMuscleVolume(logs, allExercises) {
+  const since = daysAgo(6);
+  const counts = {};
+  logs.forEach(log => {
+    if (log.date < since) return;
+    log.entries.forEach(e => {
+      const ex = allExercises.find(x => x.id === e.exerciseId);
+      if (!ex) return;
+      const validSets = e.setsDone.filter(s => s.completed).length;
+      counts[ex.primary] = (counts[ex.primary] || 0) + validSets;
+    });
+  });
+  return Object.entries(counts).sort((a, b) => b[1] - a[1]);
 }
 
 /* ---------------------------------------------------------------
@@ -1367,6 +1717,138 @@ const Pill = ({
     whiteSpace: "nowrap"
   }
 }, children);
+
+// Switch à deux positions : les deux options restent visibles en permanence, avec le
+// curseur qui glisse sur celle active — plus clair qu'un simple bouton pour montrer
+// qu'il y a un choix possible.
+const SegmentedSwitch = ({
+  leftLabel,
+  rightLabel,
+  isRight,
+  onToggle,
+  small
+}) => /*#__PURE__*/React.createElement("div", {
+  onClick: onToggle,
+  style: {
+    position: "relative",
+    display: "flex",
+    cursor: "pointer",
+    userSelect: "none",
+    background: COLORS.surface2,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 999,
+    padding: 3,
+    gap: 2
+  }
+}, /*#__PURE__*/React.createElement("div", {
+  style: {
+    position: "absolute",
+    top: 3,
+    bottom: 3,
+    left: isRight ? "50%" : 3,
+    width: "calc(50% - 3px)",
+    background: COLORS.accent,
+    borderRadius: 999,
+    transition: "left 0.15s ease"
+  }
+}), /*#__PURE__*/React.createElement("div", {
+  style: {
+    position: "relative",
+    zIndex: 1,
+    padding: small ? "4px 10px" : "6px 14px",
+    fontSize: small ? 11 : 13,
+    fontWeight: 700,
+    color: !isRight ? "#161819" : COLORS.muted,
+    minWidth: small ? 30 : undefined,
+    textAlign: "center"
+  }
+}, leftLabel), /*#__PURE__*/React.createElement("div", {
+  style: {
+    position: "relative",
+    zIndex: 1,
+    padding: small ? "4px 10px" : "6px 14px",
+    fontSize: small ? 11 : 13,
+    fontWeight: 700,
+    color: isRight ? "#161819" : COLORS.muted,
+    minWidth: small ? 30 : undefined,
+    textAlign: "center"
+  }
+}, rightLabel));
+
+// Champ numérique qui se laisse effacer et taper librement (pas de "0" forcé pendant la saisie).
+// La valeur n'est "commit" au parent que quand elle est valide ; sinon on revient à la dernière
+// valeur valide seulement à la sortie du champ (blur), jamais pendant la frappe.
+const NumField = ({
+  value,
+  onCommit,
+  style,
+  placeholder,
+  step
+}) => {
+  const [local, setLocal] = useState(value === null || value === undefined ? "" : String(value));
+  useEffect(() => {
+    setLocal(value === null || value === undefined ? "" : String(value));
+  }, [value]);
+  return /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    step: step,
+    placeholder: placeholder,
+    value: local,
+    onChange: ev => {
+      const raw = ev.target.value;
+      setLocal(raw);
+      if (raw !== "" && !isNaN(parseFloat(raw))) onCommit(parseFloat(raw));
+    },
+    onBlur: () => {
+      if (local === "" || isNaN(parseFloat(local))) setLocal(value === null || value === undefined ? "" : String(value));
+    },
+    style: style
+  });
+};
+
+// Durée en heures + minutes plutôt qu'un seul champ minutes brut à taper.
+const DurationField = ({
+  minutes,
+  onChange
+}) => {
+  const h = Math.floor((minutes || 0) / 60);
+  const m = (minutes || 0) % 60;
+  const fieldStyle = {
+    width: 56,
+    padding: 8,
+    textAlign: "center",
+    borderRadius: 8,
+    background: COLORS.surface2,
+    border: `1px solid ${COLORS.border}`,
+    color: COLORS.text,
+    fontSize: 15
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(NumField, {
+    value: h,
+    onCommit: v => onChange(Math.max(0, Math.round(v)) * 60 + m),
+    style: fieldStyle
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: COLORS.muted,
+      fontSize: 12
+    }
+  }, "h"), /*#__PURE__*/React.createElement(NumField, {
+    value: m,
+    onCommit: v => onChange(h * 60 + Math.max(0, Math.min(59, Math.round(v)))),
+    style: fieldStyle
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: COLORS.muted,
+      fontSize: 12
+    }
+  }, "min"));
+};
 
 // Petit graphique SVG maison (remplace recharts pour rester 100% autonome, sans dépendance)
 const MiniLineChart = ({
@@ -1485,7 +1967,7 @@ function SessionBuilder({
     }]);
   };
   const applyTemplate = template => {
-    if (!name) setName(template.name);
+    if (!name) setName(LANG === "en" ? template.nameEn : template.name);
     setItems(prev => {
       const existingIds = new Set(prev.map(it => it.exerciseId));
       const newItems = template.exercises.filter(te => !existingIds.has(te.exerciseId)).map(te => ({
@@ -1511,8 +1993,8 @@ function SessionBuilder({
     const pullMuscles = ["Dos", "Biceps"];
     const hasPush = [...usedMuscles].some(m => pushMuscles.includes(m));
     const hasPull = [...usedMuscles].some(m => pullMuscles.includes(m));
-    if (hasPush && !hasPull && items.length >= 2) return "Beaucoup de poussée, pas de tirage — pense à un rowing ou tirage.";
-    if (hasPull && !hasPush && items.length >= 2) return "Beaucoup de tirage, pas de poussée — un développé équilibrerait la séance.";
+    if (hasPush && !hasPull && items.length >= 2) return t("Beaucoup de poussée, pas de tirage — pense à un rowing ou tirage.", "Lots of pushing, no pulling — consider adding a row or pulldown.");
+    if (hasPull && !hasPush && items.length >= 2) return t("Beaucoup de tirage, pas de poussée — un développé équilibrerait la séance.", "Lots of pulling, no pushing — a press would balance the session.");
     return null;
   }, [usedMuscles, items]);
   return /*#__PURE__*/React.createElement("div", {
@@ -1546,7 +2028,7 @@ function SessionBuilder({
       color: COLORS.text,
       margin: 0
     }
-  }, initial ? "Modifier la séance" : "Nouvelle séance"), /*#__PURE__*/React.createElement("button", {
+  }, initial ? t("Modifier la séance", "Edit session") : t("Nouvelle séance", "New session")), /*#__PURE__*/React.createElement("button", {
     onClick: onClose,
     style: {
       background: "none",
@@ -1555,7 +2037,7 @@ function SessionBuilder({
       cursor: "pointer"
     }
   }, /*#__PURE__*/React.createElement("span", null, "✕"))), /*#__PURE__*/React.createElement("input", {
-    placeholder: "Nom de la séance (ex: Push, Fessiers...)",
+    placeholder: t("Nom de la séance (ex: Push, Fessiers...)", "Session name (e.g. Push, Glutes...)"),
     value: name,
     onChange: e => setName(e.target.value),
     style: {
@@ -1579,7 +2061,7 @@ function SessionBuilder({
       fontSize: 15,
       marginBottom: 8
     }
-  }, "Séances types suggérées"), /*#__PURE__*/React.createElement("div", {
+  }, t("Séances types suggérées", "Suggested session templates")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -1603,19 +2085,19 @@ function SessionBuilder({
       fontWeight: 700,
       fontSize: 14
     }
-  }, tpl.name), /*#__PURE__*/React.createElement(Btn, {
+  }, LANG === "en" ? tpl.nameEn : tpl.name), /*#__PURE__*/React.createElement(Btn, {
     variant: "ghost",
     style: {
       padding: "6px 10px",
       fontSize: 12
     },
     onClick: () => applyTemplate(tpl)
-  }, "Utiliser")), /*#__PURE__*/React.createElement("div", {
+  }, t("Utiliser", "Use"))), /*#__PURE__*/React.createElement("div", {
     style: {
       color: COLORS.muted,
       fontSize: 12
     }
-  }, tpl.exercises.map(te => allExercises.find(e => e.id === te.exerciseId)?.name).filter(Boolean).join(" · ")))))), items.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, tpl.exercises.map(te => exName(allExercises.find(e => e.id === te.exerciseId))).filter(Boolean).join(" · ")))))), items.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 16
     }
@@ -1647,12 +2129,12 @@ function SessionBuilder({
         color: COLORS.text,
         fontWeight: 600
       }
-    }, ex?.name), /*#__PURE__*/React.createElement("div", {
+    }, exName(ex)), /*#__PURE__*/React.createElement("div", {
       style: {
         color: COLORS.muted,
         fontSize: 12
       }
-    }, ex?.primary)), /*#__PURE__*/React.createElement("button", {
+    }, muscleLabel(ex?.primary))), /*#__PURE__*/React.createElement("button", {
       onClick: () => removeItem(it.id),
       style: {
         background: "none",
@@ -1667,17 +2149,16 @@ function SessionBuilder({
         marginTop: 8,
         flexWrap: "wrap"
       }
-    }, [["sets", "Séries"], ["reps", "Reps"], ["weight", "Poids"], ["incrementStep", "Pas +kg"]].map(([field, label]) => /*#__PURE__*/React.createElement("label", {
+    }, [["sets", t("Séries", "Sets")], ["reps", t("Reps", "Reps")], ["weight", t("Poids", "Weight")], ["incrementStep", t("Pas +kg", "Step +kg")]].map(([field, label]) => /*#__PURE__*/React.createElement("label", {
       key: field,
       style: {
         fontSize: 11,
         color: COLORS.muted
       }
-    }, label, /*#__PURE__*/React.createElement("input", {
-      type: "number",
+    }, label, /*#__PURE__*/React.createElement(NumField, {
       value: it[field],
-      onChange: e => updateItem(it.id, {
-        [field]: parseFloat(e.target.value) || 0
+      onCommit: v => updateItem(it.id, {
+        [field]: v
       }),
       style: {
         display: "block",
@@ -1697,7 +2178,7 @@ function SessionBuilder({
       fontSize: 15,
       marginBottom: 8
     }
-  }, "Ajouter un exercice"), /*#__PURE__*/React.createElement("div", {
+  }, t("Ajouter un exercice", "Add an exercise")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -1710,13 +2191,13 @@ function SessionBuilder({
     active: objectif === o.id,
     onClick: () => setObjectif(objectif === o.id ? null : o.id),
     color: COLORS.blue
-  }, o.label))), objectif && missingForObjectif.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, objectifLabel(o)))), objectif && missingForObjectif.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: COLORS.accent,
       fontSize: 12,
       marginBottom: 8
     }
-  }, "Pour cet objectif, pense à cibler : ", missingForObjectif.join(", ")), /*#__PURE__*/React.createElement("div", {
+  }, t("Pour cet objectif, pense à cibler : ", "For this goal, consider targeting: "), missingForObjectif.map(muscleLabel).join(", ")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -1728,8 +2209,8 @@ function SessionBuilder({
     key: m,
     active: filterMuscle === m,
     onClick: () => setFilterMuscle(filterMuscle === m ? null : m)
-  }, m))), /*#__PURE__*/React.createElement("input", {
-    placeholder: "Rechercher un exercice...",
+  }, muscleLabel(m)))), /*#__PURE__*/React.createElement("input", {
+    placeholder: t("Rechercher un exercice...", "Search for an exercise..."),
     value: search,
     onChange: e => setSearch(e.target.value),
     style: {
@@ -1768,13 +2249,13 @@ function SessionBuilder({
       color: COLORS.text,
       fontSize: 14
     }
-  }, ex.name), /*#__PURE__*/React.createElement("div", {
+  }, exName(ex)), /*#__PURE__*/React.createElement("div", {
     style: {
       color: COLORS.muted,
       fontSize: 11
     }
-  }, ex.primary, ex.secondary.length ? ` · ${ex.secondary.join(", ")}` : "")), /*#__PURE__*/React.createElement("a", {
-    href: exerciseVideoSearchUrl(ex.name),
+  }, muscleLabel(ex.primary), ex.secondary.length ? ` · ${ex.secondary.map(muscleLabel).join(", ")}` : "")), /*#__PURE__*/React.createElement("a", {
+    href: exerciseVideoSearchUrl(exName(ex)),
     target: "_blank",
     rel: "noopener noreferrer",
     onClick: evt => evt.stopPropagation(),
@@ -1782,7 +2263,7 @@ function SessionBuilder({
       padding: "4px 8px",
       textDecoration: "none"
     },
-    title: "Voir des vidéos"
+    title: t("Voir des vidéos", "See videos")
   }, "🎥"), /*#__PURE__*/React.createElement("span", {
     onClick: () => addExercise(ex),
     style: {
@@ -1799,19 +2280,19 @@ function SessionBuilder({
       fontSize: 13,
       marginBottom: 10
     }
-  }, "Aucun exercice trouvé", searching ? ` pour « ${search} »` : "", "."), searching && creatingMuscle === null && /*#__PURE__*/React.createElement(Btn, {
+  }, t("Aucun exercice trouvé", "No exercise found"), searching ? ` ${t("pour", "for")} « ${search} »` : "", "."), searching && creatingMuscle === null && /*#__PURE__*/React.createElement(Btn, {
     variant: "ghost",
     style: {
       width: "100%"
     },
     onClick: () => setCreatingMuscle("")
-  }, /*#__PURE__*/React.createElement("span", null, "➕"), " Créer « ", search, " » comme nouvel exercice"), searching && creatingMuscle !== null && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", null, "➕"), " ", t(`Créer « ${search} » comme nouvel exercice`, `Create "${search}" as a new exercise`)), searching && creatingMuscle !== null && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: COLORS.text,
       fontSize: 13,
       marginBottom: 8
     }
-  }, "Quel muscle principal cible « ", search, " » ?"), /*#__PURE__*/React.createElement("div", {
+  }, t(`Quel muscle principal cible « ${search} » ?`, `Which primary muscle does "${search}" target?`)), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -1822,7 +2303,7 @@ function SessionBuilder({
     key: m,
     active: creatingMuscle === m,
     onClick: () => setCreatingMuscle(m)
-  }, m))), /*#__PURE__*/React.createElement(Btn, {
+  }, muscleLabel(m)))), /*#__PURE__*/React.createElement(Btn, {
     disabled: !creatingMuscle,
     style: {
       width: "100%"
@@ -1841,14 +2322,14 @@ function SessionBuilder({
       setSearch("");
       setCreatingMuscle(null);
     }
-  }, "Ajouter « ", search, " » et l'insérer dans la séance")))), (!name || items.length === 0) && /*#__PURE__*/React.createElement("div", {
+  }, t(`Ajouter « ${search} » et l'insérer dans la séance`, `Add "${search}" and insert it into the session`))))), (!name || items.length === 0) && /*#__PURE__*/React.createElement("div", {
     style: {
       color: COLORS.danger,
       fontSize: 12,
       marginBottom: 6,
       textAlign: "center"
     }
-  }, !name ? "Ajoute un nom à ta séance pour l'enregistrer" : "Ajoute au moins un exercice pour l'enregistrer"), /*#__PURE__*/React.createElement(Btn, {
+  }, !name ? t("Ajoute un nom à ta séance pour l'enregistrer", "Add a session name to save it") : t("Ajoute au moins un exercice pour l'enregistrer", "Add at least one exercise to save it")), /*#__PURE__*/React.createElement(Btn, {
     disabled: !name || items.length === 0,
     onClick: () => onSave({
       id: initial?.id || uid(),
@@ -1858,7 +2339,7 @@ function SessionBuilder({
     style: {
       width: "100%"
     }
-  }, "Enregistrer la séance")));
+  }, t("Enregistrer la séance", "Save session"))));
 }
 
 /* ---------------------------------------------------------------
@@ -1882,8 +2363,8 @@ function WorkoutLogger({
       entryId: it.id,
       exerciseId: it.exerciseId,
       originalExerciseId: it.exerciseId,
-      name: exDef?.name,
-      exTips: exDef?.tips || [],
+      name: exName(exDef),
+      exTips: exTips(exDef),
       showTips: false,
       targetReps: it.reps,
       incrementStep: it.incrementStep,
@@ -1904,12 +2385,16 @@ function WorkoutLogger({
   const [restSecondsLog, setRestSecondsLog] = useState([]); // temps réel (non la cible) passé en repos
 
   useEffect(() => {
-    if (!rest || rest.secondsLeft <= 0) return;
-    const t = setTimeout(() => setRest(r => r ? {
+    if (!rest) return;
+    if (rest.secondsLeft <= 0) {
+      playRestEndAlert();
+      return;
+    }
+    const timer = setTimeout(() => setRest(r => r ? {
       ...r,
       secondsLeft: r.secondsLeft - 1
     } : r), 1000);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [rest]);
   const startRest = entry => {
     const seconds = suggestRestSeconds(entry.exerciseId, entry.targetReps, entry.rpe, customExercises);
@@ -1970,8 +2455,8 @@ function WorkoutLogger({
     const ex = allExercises.find(e => e.id === newExerciseId);
     updateEntry(entryId, {
       exerciseId: newExerciseId,
-      name: ex.name,
-      exTips: ex.tips || [],
+      name: exName(ex),
+      exTips: exTips(ex),
       substituting: false
     });
   };
@@ -2048,7 +2533,7 @@ function WorkoutLogger({
         color: COLORS.text,
         marginBottom: 4
       }
-    }, "Séance terminée !"), /*#__PURE__*/React.createElement("div", {
+    }, t("Séance terminée !", "Session complete!")), /*#__PURE__*/React.createElement("div", {
       style: {
         color: COLORS.muted,
         fontSize: 13,
@@ -2061,34 +2546,26 @@ function WorkoutLogger({
         marginBottom: 12,
         maxWidth: 280
       }
-    }, "Durée calculée à partir de tes vrais temps de repos mesurés + une estimation du temps de levage (~3s/répétition). Corrige si besoin."), /*#__PURE__*/React.createElement("div", {
+    }, t("Durée calculée à partir de tes vrais temps de repos mesurés + une estimation du temps de levage (~3s/répétition). Corrige si besoin.", "Duration calculated from your actual measured rest times + an estimate of lifting time (~3s/rep). Adjust if needed.")), /*#__PURE__*/React.createElement("div", {
       style: {
         marginBottom: 10
       }
     }, /*#__PURE__*/React.createElement("label", {
       style: {
         color: COLORS.muted,
-        fontSize: 12
-      }
-    }, "Durée de la séance (min)"), /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      value: summary.durationMin,
-      onChange: e => updateSummaryDuration(parseInt(e.target.value) || 1),
-      style: {
+        fontSize: 12,
         display: "block",
-        margin: "6px auto 0",
-        width: 90,
-        padding: 8,
-        textAlign: "center",
-        borderRadius: 8,
-        fontFamily: "'Playfair Display', serif",
-        fontSize: 20,
-        fontWeight: 700,
-        background: COLORS.surface2,
-        border: `1px solid ${COLORS.border}`,
-        color: COLORS.accent
+        marginBottom: 6
       }
-    })), /*#__PURE__*/React.createElement("div", {
+    }, t("Durée de la séance", "Session duration")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "center"
+      }
+    }, /*#__PURE__*/React.createElement(DurationField, {
+      minutes: summary.durationMin,
+      onChange: updateSummaryDuration
+    }))), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         gap: 24,
@@ -2107,7 +2584,7 @@ function WorkoutLogger({
         color: COLORS.muted,
         fontSize: 12
       }
-    }, "kcal estimées"))), /*#__PURE__*/React.createElement(Btn, {
+    }, t("kcal estimées", "estimated kcal")))), /*#__PURE__*/React.createElement(Btn, {
       onClick: () => onFinish({
         ...summary.logBase,
         durationMin: summary.durationMin,
@@ -2117,7 +2594,7 @@ function WorkoutLogger({
         width: "100%",
         maxWidth: 280
       }
-    }, "Fermer"));
+    }, t("Fermer", "Close")));
   }
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2161,7 +2638,7 @@ function WorkoutLogger({
       color: COLORS.muted,
       fontSize: 12
     }
-  }, "Date de la séance"), /*#__PURE__*/React.createElement("input", {
+  }, t("Date de la séance", "Session date")), /*#__PURE__*/React.createElement("input", {
     type: "date",
     value: logDate,
     onChange: e => setLogDate(e.target.value),
@@ -2213,7 +2690,7 @@ function WorkoutLogger({
       padding: 6,
       cursor: "pointer"
     },
-    title: "Conseils & vidéo"
+    title: t("Conseils & vidéo", "Tips & video")
   }, /*#__PURE__*/React.createElement("span", null, "ℹ️")), /*#__PURE__*/React.createElement("button", {
     onClick: () => updateEntry(e.entryId, {
       substituting: !e.substituting
@@ -2226,7 +2703,7 @@ function WorkoutLogger({
       padding: 6,
       cursor: "pointer"
     },
-    title: "Remplacer ponctuellement"
+    title: t("Remplacer ponctuellement", "Substitute for this session")
   }, /*#__PURE__*/React.createElement("span", null, "🔁")))), e.showTips && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
@@ -2242,12 +2719,12 @@ function WorkoutLogger({
       color: COLORS.text,
       fontSize: 13
     }
-  }, e.exTips.map((t, i) => /*#__PURE__*/React.createElement("li", {
+  }, e.exTips.map((tip, i) => /*#__PURE__*/React.createElement("li", {
     key: i,
     style: {
       marginBottom: 3
     }
-  }, t))), /*#__PURE__*/React.createElement("a", {
+  }, tip))), /*#__PURE__*/React.createElement("a", {
     href: exerciseVideoSearchUrl(e.name),
     target: "_blank",
     rel: "noopener noreferrer",
@@ -2259,7 +2736,7 @@ function WorkoutLogger({
       fontWeight: 600,
       textDecoration: "none"
     }
-  }, "🎥 Voir des vidéos de démonstration")), e.substituting && /*#__PURE__*/React.createElement("div", {
+  }, "🎥 ", t("Voir des vidéos de démonstration", "See demonstration videos"))), e.substituting && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
       maxHeight: 140,
@@ -2277,11 +2754,11 @@ function WorkoutLogger({
       cursor: "pointer",
       borderBottom: `1px solid ${COLORS.border}`
     }
-  }, ex.name, " ", /*#__PURE__*/React.createElement("span", {
+  }, exName(ex), " ", /*#__PURE__*/React.createElement("span", {
     style: {
       color: COLORS.muted
     }
-  }, "(", ex.primary, ")")))), /*#__PURE__*/React.createElement("div", {
+  }, "(", muscleLabel(ex.primary), ")")))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
@@ -2293,11 +2770,10 @@ function WorkoutLogger({
       color: COLORS.muted,
       fontSize: 12
     }
-  }, "Poids (", settings.unit, ")"), /*#__PURE__*/React.createElement("input", {
-    type: "number",
+  }, t("Poids", "Weight"), " (", settings.unit, ")"), /*#__PURE__*/React.createElement(NumField, {
     value: e.weight,
-    onChange: ev => updateEntry(e.entryId, {
-      weight: parseFloat(ev.target.value) || 0
+    onCommit: v => updateEntry(e.entryId, {
+      weight: v
     }),
     style: {
       width: 80,
@@ -2330,7 +2806,7 @@ function WorkoutLogger({
       fontSize: 12,
       width: 46
     }
-  }, "Série ", idx + 1), /*#__PURE__*/React.createElement("input", {
+  }, t("Série", "Set"), " ", idx + 1), /*#__PURE__*/React.createElement("input", {
     type: "number",
     placeholder: `${e.targetReps}`,
     value: s.reps,
@@ -2348,8 +2824,8 @@ function WorkoutLogger({
       color: COLORS.muted,
       fontSize: 12
     }
-  }, "reps"), /*#__PURE__*/React.createElement("span", {
-    title: s.completed ? "Validée" : "Pas encore renseignée",
+  }, t("reps", "reps")), /*#__PURE__*/React.createElement("span", {
+    title: s.completed ? t("Validée", "Validated") : t("Pas encore renseignée", "Not filled in yet"),
     style: {
       marginLeft: "auto",
       width: 28,
@@ -2373,7 +2849,7 @@ function WorkoutLogger({
       fontSize: 13,
       padding: 4
     },
-    title: "Retirer cette série"
+    title: t("Retirer cette série", "Remove this set")
   }, "✕"))), /*#__PURE__*/React.createElement(Btn, {
     variant: "ghost",
     style: {
@@ -2383,7 +2859,7 @@ function WorkoutLogger({
       marginTop: 2
     },
     onClick: () => addSetRow(e.entryId)
-  }, "+ Ajouter une série")), /*#__PURE__*/React.createElement("div", {
+  }, "+ ", t("Ajouter une série", "Add a set"))), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 10
     }
@@ -2392,7 +2868,7 @@ function WorkoutLogger({
       color: COLORS.muted,
       fontSize: 12
     }
-  }, "Ressenti (RPE)"), /*#__PURE__*/React.createElement("div", {
+  }, t("Ressenti (RPE)", "Effort (RPE)")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -2419,7 +2895,7 @@ function WorkoutLogger({
       fontSize: 11,
       marginBottom: 2
     }
-  }, "Repos en cours"), /*#__PURE__*/React.createElement("div", {
+  }, t("Repos en cours", "Resting")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "space-between",
@@ -2463,7 +2939,7 @@ function WorkoutLogger({
       fontSize: 12,
       fontWeight: 700
     }
-  }, "Passer ▶"), /*#__PURE__*/React.createElement("button", {
+  }, t("Passer", "Skip"), " ▶"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setRest(r => ({
       ...r,
       secondsLeft: r.secondsLeft + 15,
@@ -2489,15 +2965,15 @@ function WorkoutLogger({
       color: COLORS.muted,
       fontSize: 12
     }
-  }, "Repos suggéré : ", suggestRestSeconds(e.exerciseId, e.targetReps, e.rpe, customExercises), "s"), /*#__PURE__*/React.createElement(Btn, {
+  }, t("Repos suggéré", "Suggested rest"), " : ", suggestRestSeconds(e.exerciseId, e.targetReps, e.rpe, customExercises), "s"), /*#__PURE__*/React.createElement(Btn, {
     variant: "ghost",
     style: {
       padding: "6px 12px",
       fontSize: 12
     },
     onClick: () => startRest(e)
-  }, "▶ Démarrer le repos"))), /*#__PURE__*/React.createElement("input", {
-    placeholder: "Note (douleur, sensation...)",
+  }, "▶ ", t("Démarrer le repos", "Start rest")))), /*#__PURE__*/React.createElement("input", {
+    placeholder: t("Note (douleur, sensation...)", "Note (pain, sensation...)"),
     value: e.note,
     onChange: ev => updateEntry(e.entryId, {
       note: ev.target.value
@@ -2519,7 +2995,7 @@ function WorkoutLogger({
       marginTop: 6,
       marginBottom: 24
     }
-  }, "Terminer la séance"));
+  }, t("Terminer la séance", "Finish session")));
 }
 
 /* ---------------------------------------------------------------
@@ -2586,7 +3062,7 @@ function SeancesView({
       fontSize: 22,
       margin: 0
     }
-  }, "Tes séances"), /*#__PURE__*/React.createElement(Btn, {
+  }, t("Tes séances", "Your sessions")), /*#__PURE__*/React.createElement(Btn, {
     onClick: () => setBuilderOpen(true),
     style: {
       padding: "8px 12px"
@@ -2596,7 +3072,7 @@ function SeancesView({
       textAlign: "center",
       color: COLORS.muted
     }
-  }, "Aucune séance pour l'instant. Crée ta première séance en piochant dans la bibliothèque d'exercices."), program.sessions.map(s => {
+  }, t("Aucune séance pour l'instant. Crée ta première séance en piochant dans la bibliothèque d'exercices.", "No sessions yet. Create your first session by picking from the exercise library.")), program.sessions.map(s => {
     const sessionLogs = logs.filter(l => l.sessionId === s.id).sort((a, b) => a.date < b.date ? 1 : -1);
     const lastDate = sessionLogs[0]?.date;
     return /*#__PURE__*/React.createElement(Card, {
@@ -2622,7 +3098,7 @@ function SeancesView({
         color: COLORS.muted,
         fontSize: 12
       }
-    }, s.exerciseEntries.length, " exercices · ", lastDate ? `dernière fois le ${fmtDate(lastDate)}` : "jamais réalisée")), /*#__PURE__*/React.createElement("div", {
+    }, s.exerciseEntries.length, " ", t("exercices", "exercises"), " · ", lastDate ? t(`dernière fois le ${fmtDate(lastDate)}`, `last done ${fmtDate(lastDate)}`) : t("jamais réalisée", "never done"))), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         gap: 6
@@ -2665,7 +3141,7 @@ function SeancesView({
           padding: "4px 8px",
           borderRadius: 999
         }
-      }, ex?.name);
+      }, exName(ex));
     })), /*#__PURE__*/React.createElement(Btn, {
       onClick: () => setActiveSession(s),
       style: {
@@ -2676,7 +3152,7 @@ function SeancesView({
         justifyContent: "center",
         gap: 6
       }
-    }, /*#__PURE__*/React.createElement("span", null, "▶"), " Démarrer la séance"));
+    }, /*#__PURE__*/React.createElement("span", null, "▶"), " ", t("Démarrer la séance", "Start session")));
   }), (builderOpen || editSession) && /*#__PURE__*/React.createElement(SessionBuilder, {
     initial: editSession,
     settings: settings,
@@ -2775,13 +3251,13 @@ function HistoriqueView({
       fontSize: 22,
       margin: 0
     }
-  }, "Historique"), /*#__PURE__*/React.createElement(Btn, {
+  }, t("Historique", "History")), /*#__PURE__*/React.createElement(Btn, {
     onClick: () => setAddingRun(true),
     style: {
       padding: "8px 12px",
       fontSize: 13
     }
-  }, "🏃 + Course")), addingRun && /*#__PURE__*/React.createElement(Card, {
+  }, "🏃 + ", t("Course", "Run"))), addingRun && /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 12
     }
@@ -2791,7 +3267,7 @@ function HistoriqueView({
       fontWeight: 700,
       marginBottom: 8
     }
-  }, "Nouvelle course"), /*#__PURE__*/React.createElement("div", {
+  }, t("Nouvelle course", "New run")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -2803,7 +3279,7 @@ function HistoriqueView({
       fontSize: 11,
       color: COLORS.muted
     }
-  }, "Date", /*#__PURE__*/React.createElement("input", {
+  }, t("Date", "Date"), /*#__PURE__*/React.createElement("input", {
     type: "date",
     value: newRun.date,
     onChange: e => setNewRun(r => ({
@@ -2823,34 +3299,27 @@ function HistoriqueView({
       fontSize: 11,
       color: COLORS.muted
     }
-  }, "Durée (min)", /*#__PURE__*/React.createElement("input", {
-    type: "number",
-    value: newRun.durationMin,
-    onChange: e => setNewRun(r => ({
-      ...r,
-      durationMin: parseInt(e.target.value) || 0
-    })),
+  }, t("Durée", "Duration"), /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "block",
-      width: 80,
-      padding: 8,
-      borderRadius: 8,
-      background: COLORS.surface2,
-      border: `1px solid ${COLORS.border}`,
-      color: COLORS.text
+      marginTop: 2
     }
-  })), /*#__PURE__*/React.createElement("label", {
+  }, /*#__PURE__*/React.createElement(DurationField, {
+    minutes: newRun.durationMin,
+    onChange: v => setNewRun(r => ({
+      ...r,
+      durationMin: v
+    }))
+  }))), /*#__PURE__*/React.createElement("label", {
     style: {
       fontSize: 11,
       color: COLORS.muted
     }
-  }, "Distance (km)", /*#__PURE__*/React.createElement("input", {
-    type: "number",
+  }, t("Distance (km)", "Distance (km)"), /*#__PURE__*/React.createElement(NumField, {
     step: "0.1",
     value: newRun.distanceKm,
-    onChange: e => setNewRun(r => ({
+    onCommit: v => setNewRun(r => ({
       ...r,
-      distanceKm: parseFloat(e.target.value) || 0
+      distanceKm: v
     })),
     style: {
       display: "block",
@@ -2872,17 +3341,17 @@ function HistoriqueView({
       flex: 1
     },
     onClick: () => setAddingRun(false)
-  }, "Annuler"), /*#__PURE__*/React.createElement(Btn, {
+  }, t("Annuler", "Cancel")), /*#__PURE__*/React.createElement(Btn, {
     style: {
       flex: 1
     },
     onClick: saveRun
-  }, "Enregistrer"))), items.length === 0 && /*#__PURE__*/React.createElement(Card, {
+  }, t("Enregistrer", "Save")))), items.length === 0 && /*#__PURE__*/React.createElement(Card, {
     style: {
       color: COLORS.muted,
       textAlign: "center"
     }
-  }, "Rien d'enregistré pour l'instant."), items.map(item => {
+  }, t("Rien d'enregistré pour l'instant.", "Nothing logged yet.")), items.map(item => {
     if (item._type === "run") {
       const pace = item.distanceKm > 0 ? item.durationMin / item.distanceKm : 0;
       const paceMin = Math.floor(pace);
@@ -2904,7 +3373,7 @@ function HistoriqueView({
           fontWeight: 700,
           fontFamily: "'Playfair Display', serif"
         }
-      }, "🏃 Course"), /*#__PURE__*/React.createElement("div", {
+      }, "🏃 ", t("Course", "Run")), /*#__PURE__*/React.createElement("div", {
         style: {
           display: "flex",
           alignItems: "center",
@@ -2967,7 +3436,7 @@ function HistoriqueView({
         color: COLORS.muted,
         cursor: "pointer"
       },
-      title: "Modifier la séance"
+      title: t("Modifier la séance", "Edit session")
     }, /*#__PURE__*/React.createElement("span", null, "✏️")), /*#__PURE__*/React.createElement("button", {
       onClick: () => deleteLog(log.id),
       style: {
@@ -2983,28 +3452,19 @@ function HistoriqueView({
         gap: 8,
         marginTop: 6
       }
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      defaultValue: log.durationMin || 45,
-      onBlur: e => {
-        updateLogDuration(log.id, parseInt(e.target.value) || 45);
-        setEditingDurationId(null);
-      },
-      autoFocus: true,
+    }, /*#__PURE__*/React.createElement(DurationField, {
+      minutes: log.durationMin || 45,
+      onChange: v => updateLogDuration(log.id, v)
+    }), /*#__PURE__*/React.createElement("button", {
+      onClick: () => setEditingDurationId(null),
       style: {
-        width: 70,
-        padding: 6,
-        borderRadius: 8,
-        background: COLORS.surface2,
-        border: `1px solid ${COLORS.border}`,
-        color: COLORS.text
-      }
-    }), /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: COLORS.muted,
+        background: "none",
+        border: "none",
+        color: COLORS.accent,
+        cursor: "pointer",
         fontSize: 12
       }
-    }, "min")) : (log.durationMin || log.calories) && /*#__PURE__*/React.createElement("div", {
+    }, "OK")) : (log.durationMin || log.calories) && /*#__PURE__*/React.createElement("div", {
       onClick: () => setEditingDurationId(log.id),
       style: {
         color: COLORS.accent,
@@ -3012,7 +3472,7 @@ function HistoriqueView({
         marginTop: 4,
         cursor: "pointer"
       },
-      title: "Toucher pour modifier la durée"
+      title: t("Toucher pour modifier la durée", "Tap to edit duration")
     }, log.durationMin ? `${log.durationMin} min` : "", log.durationMin && log.calories ? " · " : "", log.calories ? `🔥 ${log.calories} kcal` : "", " ✏️"), log.entries.map((e, i) => /*#__PURE__*/React.createElement("div", {
       key: i,
       style: {
@@ -3032,7 +3492,7 @@ function HistoriqueView({
       style: {
         color: COLORS.muted
       }
-    }, "(", e.setsDone.filter(s => s.completed).length, "/", e.setsDone.length, " séries · RPE ", e.rpe, ")")), e.note && /*#__PURE__*/React.createElement("div", {
+    }, "(", e.setsDone.filter(s => s.reps !== "" && parseInt(s.reps) > 0).length, "/", e.setsDone.length, " ", t("séries", "sets"), " · RPE ", e.rpe, ")")), e.note && /*#__PURE__*/React.createElement("div", {
       style: {
         color: COLORS.muted,
         fontSize: 12,
@@ -3091,15 +3551,22 @@ function EditLogModal({
   } : e));
   const removeExercise = entryIdx => setEntries(prev => prev.filter((_, i) => i !== entryIdx));
   const save = () => {
+    const normalizedEntries = entries.map(e => ({
+      ...e,
+      setsDone: e.setsDone.map(s => ({
+        ...s,
+        completed: s.reps !== "" && parseInt(s.reps) > 0
+      }))
+    }));
     const weightKg = getReferenceWeight(bodyweight, settings);
-    const calories = estimateCalories(entries, durationMin, weightKg);
+    const calories = estimateCalories(normalizedEntries, durationMin, weightKg);
     onSave({
       ...log,
       sessionName,
       date,
       durationMin,
       calories,
-      entries
+      entries: normalizedEntries
     });
   };
   return /*#__PURE__*/React.createElement("div", {
@@ -3124,7 +3591,7 @@ function EditLogModal({
       color: COLORS.text,
       margin: 0
     }
-  }, "Modifier la séance"), /*#__PURE__*/React.createElement("button", {
+  }, t("Modifier la séance", "Edit session")), /*#__PURE__*/React.createElement("button", {
     onClick: onClose,
     style: {
       background: "none",
@@ -3157,7 +3624,7 @@ function EditLogModal({
       fontSize: 11,
       color: COLORS.muted
     }
-  }, "Date", /*#__PURE__*/React.createElement("input", {
+  }, t("Date", "Date"), /*#__PURE__*/React.createElement("input", {
     type: "date",
     value: date,
     onChange: e => setDate(e.target.value),
@@ -3174,20 +3641,14 @@ function EditLogModal({
       fontSize: 11,
       color: COLORS.muted
     }
-  }, "Durée (min)", /*#__PURE__*/React.createElement("input", {
-    type: "number",
-    value: durationMin,
-    onChange: e => setDurationMin(parseInt(e.target.value) || 1),
+  }, t("Durée", "Duration"), /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "block",
-      width: 80,
-      padding: 8,
-      borderRadius: 8,
-      background: COLORS.surface2,
-      border: `1px solid ${COLORS.border}`,
-      color: COLORS.text
+      marginTop: 2
     }
-  }))), entries.map((e, entryIdx) => {
+  }, /*#__PURE__*/React.createElement(DurationField, {
+    minutes: durationMin,
+    onChange: setDurationMin
+  })))), entries.map((e, entryIdx) => {
     const exDef = allExercises.find(ex => ex.id === e.exerciseId);
     return /*#__PURE__*/React.createElement(Card, {
       key: entryIdx,
@@ -3206,7 +3667,7 @@ function EditLogModal({
         fontWeight: 700,
         fontFamily: "'Playfair Display', serif"
       }
-    }, e.name || exDef?.name), /*#__PURE__*/React.createElement("button", {
+    }, e.name || exName(exDef)), /*#__PURE__*/React.createElement("button", {
       onClick: () => removeExercise(entryIdx),
       style: {
         background: "none",
@@ -3226,11 +3687,10 @@ function EditLogModal({
         color: COLORS.muted,
         fontSize: 12
       }
-    }, "Poids"), /*#__PURE__*/React.createElement("input", {
-      type: "number",
+    }, t("Poids", "Weight")), /*#__PURE__*/React.createElement(NumField, {
       value: e.weight,
-      onChange: ev => updateEntry(entryIdx, {
-        weight: parseFloat(ev.target.value) || 0
+      onCommit: v => updateEntry(entryIdx, {
+        weight: v
       }),
       style: {
         width: 70,
@@ -3262,7 +3722,7 @@ function EditLogModal({
         fontSize: 12,
         width: 46
       }
-    }, "Série ", setIdx + 1), /*#__PURE__*/React.createElement("input", {
+    }, t("Série", "Set"), " ", setIdx + 1), /*#__PURE__*/React.createElement("input", {
       type: "number",
       value: s.reps,
       onChange: ev => updateSetReps(entryIdx, setIdx, ev.target.value),
@@ -3279,7 +3739,7 @@ function EditLogModal({
         color: COLORS.muted,
         fontSize: 12
       }
-    }, "reps"), e.setsDone.length > 1 && /*#__PURE__*/React.createElement("button", {
+    }, t("reps", "reps")), e.setsDone.length > 1 && /*#__PURE__*/React.createElement("button", {
       onClick: () => removeSetRow(entryIdx, setIdx),
       style: {
         marginLeft: "auto",
@@ -3296,7 +3756,7 @@ function EditLogModal({
         fontSize: 12
       },
       onClick: () => addSetRow(entryIdx)
-    }, "+ Ajouter une série")), /*#__PURE__*/React.createElement("div", {
+    }, "+ ", t("Ajouter une série", "Add a set"))), /*#__PURE__*/React.createElement("div", {
       style: {
         marginTop: 10
       }
@@ -3305,7 +3765,7 @@ function EditLogModal({
         color: COLORS.muted,
         fontSize: 12
       }
-    }, "Ressenti (RPE)"), /*#__PURE__*/React.createElement("div", {
+    }, t("Ressenti (RPE)", "Effort (RPE)")), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         gap: 6,
@@ -3319,7 +3779,7 @@ function EditLogModal({
       }),
       color: r >= 5 ? COLORS.danger : r >= 4 ? "#FFB35B" : COLORS.accent
     }, r)))), /*#__PURE__*/React.createElement("input", {
-      placeholder: "Note (douleur, sensation...)",
+      placeholder: t("Note (douleur, sensation...)", "Note (pain, sensation...)"),
       value: e.note || "",
       onChange: ev => updateEntry(entryIdx, {
         note: ev.target.value
@@ -3342,12 +3802,13 @@ function EditLogModal({
       marginTop: 6,
       marginBottom: 24
     }
-  }, "Enregistrer les modifications"));
+  }, t("Enregistrer les modifications", "Save changes")));
 }
 function ProgressionView({
   program,
   logs,
-  customExercises
+  customExercises,
+  runs
 }) {
   const allExercises = useMemo(() => {
     const ids = new Set();
@@ -3365,6 +3826,11 @@ function ProgressionView({
     }));
   }, [selected, logs]);
   const pr = selected ? personalRecord(logs, selected) : 0;
+  const oneRM = selected ? estimatedOneRepMax(logs, selected) : 0;
+  const consistency = useMemo(() => weeklyConsistency(logs, runs), [logs, runs]);
+  const muscleVolume = useMemo(() => weeklyMuscleVolume(logs, getAllExercises(customExercises)), [logs, customExercises]);
+  const maxVolume = muscleVolume.length ? muscleVolume[0][1] : 1;
+  const dayLabels = t(["L", "M", "M", "J", "V", "S", "D"], ["M", "T", "W", "T", "F", "S", "S"]);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       padding: 16,
@@ -3377,12 +3843,96 @@ function ProgressionView({
       fontSize: 22,
       marginBottom: 16
     }
-  }, "Progression"), allExercises.length === 0 && /*#__PURE__*/React.createElement(Card, {
+  }, t("Progression", "Progress")), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: COLORS.text,
+      fontFamily: "'Playfair Display', serif",
+      fontSize: 20,
+      fontWeight: 700
+    }
+  }, consistency.thisWeekCount, " ", t("séances cette semaine", "sessions this week")), consistency.streak > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: COLORS.accent,
+      fontSize: 12,
+      marginTop: 2
+    }
+  }, "🔥 ", consistency.streak, " ", t(consistency.streak > 1 ? "jours de suite" : "jour", consistency.streak > 1 ? "days in a row" : "day")))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between"
+    }
+  }, consistency.last7.map((d, i) => /*#__PURE__*/React.createElement("div", {
+    key: d,
+    style: {
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 26,
+      height: 26,
+      borderRadius: "50%",
+      marginBottom: 4,
+      background: consistency.daysWithActivity[i] ? COLORS.accent : COLORS.surface2,
+      border: `1px solid ${consistency.daysWithActivity[i] ? COLORS.accent : COLORS.border}`
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: COLORS.muted,
+      fontSize: 10
+    }
+  }, dayLabels[i]))))), muscleVolume.length > 0 && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: COLORS.text,
+      fontWeight: 700,
+      marginBottom: 10
+    }
+  }, t("Volume par muscle (7 derniers jours)", "Volume by muscle (last 7 days)")), muscleVolume.map(([muscle, count]) => /*#__PURE__*/React.createElement("div", {
+    key: muscle,
+    style: {
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      fontSize: 12,
+      color: COLORS.muted,
+      marginBottom: 2
+    }
+  }, /*#__PURE__*/React.createElement("span", null, muscleLabel(muscle)), /*#__PURE__*/React.createElement("span", null, count, " ", t("séries", "sets"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 6,
+      borderRadius: 4,
+      background: COLORS.surface2
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 6,
+      borderRadius: 4,
+      width: `${count / maxVolume * 100}%`,
+      background: COLORS.accent
+    }
+  }))))), allExercises.length === 0 && /*#__PURE__*/React.createElement(Card, {
     style: {
       color: COLORS.muted,
       textAlign: "center"
     }
-  }, "Ajoute des séances pour voir ta progression."), /*#__PURE__*/React.createElement("div", {
+  }, t("Ajoute des séances pour voir ta progression.", "Add sessions to see your progress.")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -3395,9 +3945,15 @@ function ProgressionView({
     active: selected === ex.id,
     onClick: () => setSelected(ex.id),
     color: COLORS.blue
-  }, ex.name))), selected && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Card, {
+  }, exName(ex)))), selected && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
-      marginBottom: 14,
+      display: "flex",
+      gap: 10,
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      flex: 1,
       display: "flex",
       alignItems: "center",
       gap: 10
@@ -3407,20 +3963,39 @@ function ProgressionView({
       color: COLORS.muted,
       fontSize: 12
     }
-  }, "Record personnel"), /*#__PURE__*/React.createElement("div", {
+  }, t("Record personnel", "Personal record")), /*#__PURE__*/React.createElement("div", {
     style: {
       color: COLORS.text,
       fontFamily: "'Playfair Display', serif",
       fontSize: 20,
       fontWeight: 700
     }
-  }, pr || "—"))), /*#__PURE__*/React.createElement(Card, null, data.length < 2 ? /*#__PURE__*/React.createElement("div", {
+  }, pr || "—"))), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      flex: 1,
+      display: "flex",
+      alignItems: "center",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("span", null, "📐"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: COLORS.muted,
+      fontSize: 12
+    }
+  }, t("1RM estimé", "Estimated 1RM")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: COLORS.text,
+      fontFamily: "'Playfair Display', serif",
+      fontSize: 20,
+      fontWeight: 700
+    }
+  }, oneRM || "—")))), /*#__PURE__*/React.createElement(Card, null, data.length < 2 ? /*#__PURE__*/React.createElement("div", {
     style: {
       color: COLORS.muted,
       fontSize: 13,
       textAlign: "center"
     }
-  }, "Pas encore assez de séances pour un graphique.") : /*#__PURE__*/React.createElement(MiniLineChart, {
+  }, t("Pas encore assez de séances pour un graphique.", "Not enough sessions yet for a chart.")) : /*#__PURE__*/React.createElement(MiniLineChart, {
     data: data,
     color: COLORS.accent
   }))));
@@ -3458,7 +4033,7 @@ function PoidsView({
       fontSize: 22,
       marginBottom: 16
     }
-  }, "Poids corporel"), /*#__PURE__*/React.createElement(Card, {
+  }, t("Poids corporel", "Body weight")), /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 14
     }
@@ -3493,13 +4068,13 @@ function PoidsView({
     }
   }), /*#__PURE__*/React.createElement(Btn, {
     onClick: add
-  }, "Ajouter"))), /*#__PURE__*/React.createElement(Card, null, chartData.length < 2 ? /*#__PURE__*/React.createElement("div", {
+  }, t("Ajouter", "Add")))), /*#__PURE__*/React.createElement(Card, null, chartData.length < 2 ? /*#__PURE__*/React.createElement("div", {
     style: {
       color: COLORS.muted,
       fontSize: 13,
       textAlign: "center"
     }
-  }, "Ajoute au moins deux mesures pour voir la courbe.") : /*#__PURE__*/React.createElement(MiniLineChart, {
+  }, t("Ajoute au moins deux mesures pour voir la courbe.", "Add at least two measurements to see the chart.")) : /*#__PURE__*/React.createElement(MiniLineChart, {
     data: chartData,
     color: COLORS.blue
   })));
@@ -3507,9 +4082,29 @@ function PoidsView({
 function ReglagesView({
   settings,
   setSettings,
-  onReset
+  onReset,
+  onExport,
+  onImport
 }) {
   const [confirming, setConfirming] = useState(false);
+  const [importError, setImportError] = useState(null);
+  const fileInputRef = useRef(null);
+  const handleFileChange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        onImport(data);
+        setImportError(null);
+      } catch {
+        setImportError(t("Fichier invalide.", "Invalid file."));
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
   return /*#__PURE__*/React.createElement("div", {
     style: {
       padding: 16,
@@ -3522,7 +4117,7 @@ function ReglagesView({
       fontSize: 22,
       marginBottom: 16
     }
-  }, "Réglages"), /*#__PURE__*/React.createElement(Card, {
+  }, t("Réglages", "Settings")), /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 12
     }
@@ -3531,7 +4126,41 @@ function ReglagesView({
       color: COLORS.text,
       marginBottom: 8
     }
-  }, "Unité de poids"), /*#__PURE__*/React.createElement("div", {
+  }, t("Langue", "Language")), /*#__PURE__*/React.createElement(SegmentedSwitch, {
+    leftLabel: "Français",
+    rightLabel: "English",
+    isRight: settings.lang === "en",
+    onToggle: () => setSettings(s => ({
+      ...s,
+      lang: s.lang === "en" ? "fr" : "en"
+    }))
+  })), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: COLORS.text,
+      marginBottom: 8
+    }
+  }, t("Thème", "Theme")), /*#__PURE__*/React.createElement(SegmentedSwitch, {
+    leftLabel: `🌸 ${t("Girly", "Girly")}`,
+    rightLabel: `🌙 ${t("Dark", "Dark")}`,
+    isRight: settings.theme === "sombre",
+    onToggle: () => setSettings(s => ({
+      ...s,
+      theme: s.theme === "sombre" ? "pastel" : "sombre"
+    }))
+  })), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: COLORS.text,
+      marginBottom: 8
+    }
+  }, t("Unité de poids", "Weight unit")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8
@@ -3557,18 +4186,17 @@ function ReglagesView({
       color: COLORS.text,
       marginBottom: 4
     }
-  }, "Poids de référence (kg)"), /*#__PURE__*/React.createElement("div", {
+  }, t("Poids de référence (kg)", "Reference weight (kg)")), /*#__PURE__*/React.createElement("div", {
     style: {
       color: COLORS.muted,
       fontSize: 12,
       marginBottom: 8
     }
-  }, "Utilisé pour estimer les calories brûlées si tu n'as pas encore enregistré de pesée récente."), /*#__PURE__*/React.createElement("input", {
-    type: "number",
+  }, t("Utilisé pour estimer les calories brûlées si tu n'as pas encore enregistré de pesée récente.", "Used to estimate calories burned if you haven't logged a recent weigh-in yet.")), /*#__PURE__*/React.createElement(NumField, {
     value: settings.referenceWeight,
-    onChange: e => setSettings(s => ({
+    onCommit: v => setSettings(s => ({
       ...s,
-      referenceWeight: parseFloat(e.target.value) || 0
+      referenceWeight: v
     })),
     style: {
       padding: 8,
@@ -3587,12 +4215,11 @@ function ReglagesView({
       color: COLORS.text,
       marginBottom: 8
     }
-  }, "Pas d'incrémentation par défaut"), /*#__PURE__*/React.createElement("input", {
-    type: "number",
+  }, t("Pas d'incrémentation par défaut", "Default weight increment")), /*#__PURE__*/React.createElement(NumField, {
     value: settings.defaultIncrement,
-    onChange: e => setSettings(s => ({
+    onCommit: v => setSettings(s => ({
       ...s,
-      defaultIncrement: parseFloat(e.target.value) || 0
+      defaultIncrement: v
     })),
     style: {
       padding: 8,
@@ -3602,19 +4229,65 @@ function ReglagesView({
       border: `1px solid ${COLORS.border}`,
       color: COLORS.text
     }
-  })), /*#__PURE__*/React.createElement(Card, null, !confirming ? /*#__PURE__*/React.createElement(Btn, {
+  })), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: COLORS.text,
+      marginBottom: 4
+    }
+  }, t("Sauvegarde", "Backup")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: COLORS.muted,
+      fontSize: 12,
+      marginBottom: 10
+    }
+  }, t("Tes données ne vivent que dans ce navigateur. Exporte-les régulièrement pour ne rien perdre si tu changes de téléphone ou vides le cache.", "Your data only lives in this browser. Export it regularly so you don't lose anything if you change phones or clear your cache.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    style: {
+      flex: 1
+    },
+    onClick: onExport
+  }, "⬇️ ", t("Exporter", "Export")), /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    style: {
+      flex: 1
+    },
+    onClick: () => fileInputRef.current?.click()
+  }, "⬆️ ", t("Importer", "Import")), /*#__PURE__*/React.createElement("input", {
+    ref: fileInputRef,
+    type: "file",
+    accept: "application/json",
+    onChange: handleFileChange,
+    style: {
+      display: "none"
+    }
+  })), importError && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: COLORS.danger,
+      fontSize: 12,
+      marginTop: 8
+    }
+  }, importError)), /*#__PURE__*/React.createElement(Card, null, !confirming ? /*#__PURE__*/React.createElement(Btn, {
     variant: "danger",
     onClick: () => setConfirming(true),
     style: {
       width: "100%"
     }
-  }, "🗑 Réinitialiser toutes les données") : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, "🗑 ", t("Réinitialiser toutes les données", "Reset all data")) : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: COLORS.danger,
       fontSize: 13,
       marginBottom: 10
     }
-  }, "Cette action est irréversible. Toutes tes séances, ton historique et ton poids seront supprimés."), /*#__PURE__*/React.createElement("div", {
+  }, t("Cette action est irréversible. Toutes tes séances, ton historique et ton poids seront supprimés.", "This action is irreversible. All your sessions, history, and weight logs will be deleted.")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8
@@ -3625,7 +4298,7 @@ function ReglagesView({
     style: {
       flex: 1
     }
-  }, "Annuler"), /*#__PURE__*/React.createElement(Btn, {
+  }, t("Annuler", "Cancel")), /*#__PURE__*/React.createElement(Btn, {
     variant: "danger",
     onClick: () => {
       onReset();
@@ -3634,7 +4307,7 @@ function ReglagesView({
     style: {
       flex: 1
     }
-  }, "Confirmer")))));
+  }, t("Confirmer", "Confirm"))))));
 }
 
 /* ---------------------------------------------------------------
@@ -3658,7 +4331,17 @@ function App() {
         sessions: []
       }), loadKey("logs", []), loadKey("bodyweight", []), loadKey("settings", DEFAULT_SETTINGS), loadKey("exercises-custom", []), loadKey("runs", [])]);
       setProgram(p);
-      setLogs(l);
+      const normalizedLogs = l.map(log => ({
+        ...log,
+        entries: log.entries.map(e => ({
+          ...e,
+          setsDone: e.setsDone.map(s => ({
+            ...s,
+            completed: s.reps !== "" && parseInt(s.reps) > 0
+          }))
+        }))
+      }));
+      setLogs(normalizedLogs);
       setBodyweight(b);
       setSettings({
         ...DEFAULT_SETTINGS,
@@ -3705,25 +4388,61 @@ function App() {
     setCustomExercises([]);
     setRuns([]);
   };
+  const exportData = () => {
+    const data = {
+      exportedAt: new Date().toISOString(),
+      program,
+      logs,
+      bodyweight,
+      settings,
+      customExercises,
+      runs
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json"
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `gym-tracker-export-${todayISO()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const importData = data => {
+    if (data.program) setProgram(data.program);
+    if (data.logs) setLogs(data.logs);
+    if (data.bodyweight) setBodyweight(data.bodyweight);
+    if (data.settings) setSettings({
+      ...DEFAULT_SETTINGS,
+      ...data.settings
+    });
+    if (data.customExercises) setCustomExercises(data.customExercises);
+    if (data.runs) setRuns(data.runs);
+  };
+
+  // Applique le thème et la langue choisis avant tout rendu (COLORS/LANG sont mutés en
+  // place, pas des state React) — doit s'exécuter avant tout appel à t()/COLORS ci-dessous.
+  Object.assign(COLORS, THEMES[settings.theme] || THEMES.pastel);
+  LANG = settings.lang || "fr";
   const tabs = [{
     id: "seances",
-    label: "Séances",
+    label: t("Programmes", "Programs"),
     icon: "🏋"
   }, {
     id: "historique",
-    label: "Historique",
+    label: t("Séances", "Sessions"),
     icon: "🕒"
   }, {
     id: "progression",
-    label: "Progrès",
+    label: t("Progrès", "Progress"),
     icon: "📈"
   }, {
     id: "poids",
-    label: "Poids",
+    label: t("Poids", "Weight"),
     icon: "⚖"
   }, {
     id: "reglages",
-    label: "Réglages",
+    label: t("Réglages", "Settings"),
     icon: "⚙"
   }];
   if (loading) {
@@ -3740,7 +4459,7 @@ function App() {
         color: COLORS.muted,
         fontFamily: "'Playfair Display', serif"
       }
-    }, "Chargement…"));
+    }, t("Chargement…", "Loading…")));
   }
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -3762,9 +4481,34 @@ function App() {
       margin: 12,
       borderRadius: 10
     }
-  }, "⚠️ Ton navigateur bloque le stockage local (mode navigation privée ?) — tes données ne seront pas conservées."), /*#__PURE__*/React.createElement("div", {
+  }, "⚠️ ", t("Ton navigateur bloque le stockage local (mode navigation privée ?) — tes données ne seront pas conservées.", "Your browser is blocking local storage (private browsing mode?) — your data won't be saved.")), /*#__PURE__*/React.createElement("div", {
     style: {
-      padding: "18px 16px 4px",
+      display: "flex",
+      justifyContent: "flex-end",
+      gap: 8,
+      padding: "10px 12px 0"
+    }
+  }, /*#__PURE__*/React.createElement(SegmentedSwitch, {
+    leftLabel: "FR",
+    rightLabel: "EN",
+    isRight: settings.lang === "en",
+    onToggle: () => setSettings(s => ({
+      ...s,
+      lang: s.lang === "en" ? "fr" : "en"
+    })),
+    small: true
+  }), /*#__PURE__*/React.createElement(SegmentedSwitch, {
+    leftLabel: "🌸",
+    rightLabel: "🌙",
+    isRight: settings.theme === "sombre",
+    onToggle: () => setSettings(s => ({
+      ...s,
+      theme: s.theme === "sombre" ? "pastel" : "sombre"
+    })),
+    small: true
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "10px 16px 4px",
       textAlign: "center"
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -3792,17 +4536,17 @@ function App() {
       textTransform: "uppercase",
       marginTop: 4
     }
-  }, "Ton carnet d'entraînement")), /*#__PURE__*/React.createElement("div", {
+  }, t("Ton carnet d'entraînement", "Your training log"))), /*#__PURE__*/React.createElement("div", {
     style: {
       margin: "10px 16px 4px",
       padding: "16px 16px",
-      background: `linear-gradient(135deg, #F6C9D0 0%, #F6DDB0 45%, #BFDCB5 100%)`,
+      background: settings.theme === "sombre" ? `linear-gradient(135deg, #2A3F52 0%, #24463A 50%, #3A2F4A 100%)` : `linear-gradient(135deg, #F6C9D0 0%, #F6DDB0 45%, #BFDCB5 100%)`,
       borderRadius: 16,
       boxShadow: "0 4px 16px #0000001A"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      color: "#5C4550",
+      color: settings.theme === "sombre" ? "#DCE6EA" : "#5C4550",
       fontSize: 10,
       letterSpacing: 1.5,
       textTransform: "uppercase",
@@ -3810,9 +4554,9 @@ function App() {
       fontWeight: 700,
       opacity: 0.7
     }
-  }, "Phrase du jour"), /*#__PURE__*/React.createElement("div", {
+  }, t("Phrase du jour", "Quote of the day")), /*#__PURE__*/React.createElement("div", {
     style: {
-      color: "#5C4550",
+      color: settings.theme === "sombre" ? "#DCE6EA" : "#5C4550",
       fontSize: 16,
       fontStyle: "italic",
       fontWeight: 600,
@@ -3838,14 +4582,17 @@ function App() {
   }), tab === "progression" && /*#__PURE__*/React.createElement(ProgressionView, {
     program: program,
     logs: logs,
-    customExercises: customExercises
+    customExercises: customExercises,
+    runs: runs
   }), tab === "poids" && /*#__PURE__*/React.createElement(PoidsView, {
     bodyweight: bodyweight,
     setBodyweight: setBodyweight
   }), tab === "reglages" && /*#__PURE__*/React.createElement(ReglagesView, {
     settings: settings,
     setSettings: setSettings,
-    onReset: reset
+    onReset: reset,
+    onExport: exportData,
+    onImport: importData
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
