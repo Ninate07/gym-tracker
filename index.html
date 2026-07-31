@@ -1127,7 +1127,9 @@ function getAllExercises(custom = []) {
   return [...EXERCISE_LIBRARY, ...custom];
 }
 function exerciseVideoSearchUrl(exerciseName) {
-  return "https://www.youtube.com/results?search_query=" + encodeURIComponent(exerciseName + " technique exécution");
+  // youtube.com/results est souvent intercepté par l'appli YouTube qui ignore la recherche
+  // et ouvre l'accueil. Une recherche Google évite ce problème et affiche les vidéos directement.
+  return "https://www.google.com/search?q=" + encodeURIComponent(exerciseName + " exercice technique musculation") + "&tbm=vid";
 }
 const uid = () => Math.random().toString(36).slice(2, 10);
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -1251,13 +1253,25 @@ function suggestRestSeconds(exerciseId, targetReps, rpe = 3, custom = []) {
   return Math.max(45, Math.min(240, base));
 }
 
-// Estimation des calories brûlées : formule MET standard
+// Estimation des calories brûlées : formule MET standard (American College of Sports Medicine)
 // kcal/min = (MET * 3.5 * poids_kg) / 200
-// MET de base ~5 (musculation, effort modéré), ajusté selon le ressenti moyen (RPE)
+// Le MET de base pour la musculation se situe entre 3 et 6 selon l'intensité réelle.
+// On ajuste ce MET selon deux éléments mesurés (pas inventés) :
+//  - le ressenti moyen (RPE) que tu indiques
+//  - le volume réel de la séance (poids × séries × reps), rapporté à ton poids de corps,
+//    qui reflète l'intensité relative de l'effort
 function estimateCalories(entries, durationMin, weightKg) {
   const rpes = entries.map(e => e.rpe ?? 3);
   const avgRpe = rpes.length ? rpes.reduce((a, b) => a + b, 0) / rpes.length : 3;
-  const met = Math.max(4, Math.min(7, 5 + (avgRpe - 3) * 0.4));
+  const totalVolume = entries.reduce((sum, e) => {
+    const completedSets = (e.setsDone || []).filter(s => s.completed).length;
+    return sum + (e.weight || 0) * completedSets * (parseInt(e.setsDone?.[0]?.reps) || 0);
+  }, 0);
+  // volume relatif : combien de fois le poids de corps est déplacé au total sur la séance
+  const relativeVolume = weightKg > 0 ? totalVolume / weightKg : 0;
+  // ajustement doux et borné : jamais plus de ±1 MET à partir du volume seul
+  const volumeAdjustment = Math.max(0, Math.min(1, relativeVolume / 40));
+  const met = Math.max(3, Math.min(6.5, 4.5 + (avgRpe - 3) * 0.4 + volumeAdjustment));
   const kcal = met * 3.5 * weightKg / 200 * durationMin;
   return Math.round(kcal);
 }
@@ -1861,7 +1875,6 @@ function WorkoutLogger({
   bodyweight
 }) {
   const allExercises = getAllExercises(customExercises);
-  const [startTime] = useState(Date.now());
   const [entries, setEntries] = useState(session.exerciseEntries.map(it => {
     const suggestion = suggestNextWeight(it, logs);
     const exDef = allExercises.find(e => e.id === it.exerciseId);
@@ -1879,7 +1892,7 @@ function WorkoutLogger({
       setsDone: Array.from({
         length: it.sets
       }, () => ({
-        reps: it.reps,
+        reps: "",
         completed: false
       })),
       rpe: 3,
@@ -1887,7 +1900,8 @@ function WorkoutLogger({
       substituting: false
     };
   }));
-  const [rest, setRest] = useState(null); // { label, secondsLeft, total }
+  const [rest, setRest] = useState(null); // { entryId, label, secondsLeft, total }
+  const [restSecondsLog, setRestSecondsLog] = useState([]); // temps réel (non la cible) passé en repos
 
   useEffect(() => {
     if (!rest || rest.secondsLeft <= 0) return;
@@ -1900,30 +1914,58 @@ function WorkoutLogger({
   const startRest = entry => {
     const seconds = suggestRestSeconds(entry.exerciseId, entry.targetReps, entry.rpe, customExercises);
     setRest({
+      entryId: entry.entryId,
       label: entry.name,
       secondsLeft: seconds,
       total: seconds
+    });
+  };
+  const endRest = () => {
+    setRest(r => {
+      if (r) {
+        const elapsed = r.total - r.secondsLeft; // temps réel écoulé, respecté ou non
+        setRestSecondsLog(log => [...log, Math.max(0, elapsed)]);
+      }
+      return null;
     });
   };
   const updateEntry = (entryId, patch) => setEntries(prev => prev.map(e => e.entryId === entryId ? {
     ...e,
     ...patch
   } : e));
-  const updateSet = (entryId, idx, patch) => {
+  const updateSetReps = (entryId, idx, rawValue) => {
+    const wasEmpty = (() => {
+      const entry = entries.find(e => e.entryId === entryId);
+      return entry ? entry.setsDone[idx].reps === "" : true;
+    })();
+    const filled = rawValue !== "";
+    const completed = filled && parseInt(rawValue) > 0;
     setEntries(prev => prev.map(e => e.entryId === entryId ? {
       ...e,
       setsDone: e.setsDone.map((s, i) => i === idx ? {
         ...s,
-        ...patch
+        reps: rawValue,
+        completed
       } : s)
     } : e));
-    // déclenche le repos suggéré quand une série vient d'être cochée
-    if (patch.completed) {
+    // déclenche le repos suggéré dès qu'une série vient d'être renseignée (et n'était pas la dernière)
+    if (wasEmpty && completed) {
       const entry = entries.find(e => e.entryId === entryId);
       const isLastSet = idx === entry.setsDone.length - 1;
-      if (entry && !entry.setsDone[idx].completed && !isLastSet) startRest(entry);
+      if (entry && !isLastSet) startRest(entry);
     }
   };
+  const addSetRow = entryId => setEntries(prev => prev.map(e => e.entryId === entryId ? {
+    ...e,
+    setsDone: [...e.setsDone, {
+      reps: "",
+      completed: false
+    }]
+  } : e));
+  const removeSetRow = (entryId, idx) => setEntries(prev => prev.map(e => e.entryId === entryId ? {
+    ...e,
+    setsDone: e.setsDone.filter((_, i) => i !== idx)
+  } : e));
   const substitute = (entryId, newExerciseId) => {
     const ex = allExercises.find(e => e.id === newExerciseId);
     updateEntry(entryId, {
@@ -1934,17 +1976,24 @@ function WorkoutLogger({
     });
   };
   const [summary, setSummary] = useState(null);
+  const [logDate, setLogDate] = useState(todayISO());
   const finish = () => {
-    const durationMin = Math.max(1, Math.round((Date.now() - startTime) / 60000));
     const weightKg = getReferenceWeight(bodyweight, settings);
+    // Durée par défaut = vrai temps de repos mesuré (montre en main sur chaque minuteur)
+    // + une estimation du temps actif (environ 3s par répétition faite, hypothèse déclarée, pas mesurée).
+    const totalRestSeconds = restSecondsLog.reduce((a, b) => a + b, 0);
+    const activeSeconds = entries.reduce((sum, e) => {
+      const completedReps = (e.setsDone || []).filter(s => s.completed).reduce((a, s) => a + (parseInt(s.reps) || 0), 0);
+      return sum + completedReps * 3;
+    }, 0);
+    const autoDurationMin = Math.max(1, Math.round((totalRestSeconds + activeSeconds) / 60));
+    const durationMin = autoDurationMin;
     const calories = estimateCalories(entries, durationMin, weightKg);
-    const log = {
+    const logBase = {
       id: uid(),
       sessionId: session.id,
       sessionName: session.name,
-      date: todayISO(),
-      durationMin,
-      calories,
+      date: logDate,
       entries: entries.map(e => ({
         exerciseId: e.exerciseId,
         originalExerciseId: e.originalExerciseId,
@@ -1962,9 +2011,21 @@ function WorkoutLogger({
       }
     });
     setSummary({
-      log,
+      logBase,
       durationMin,
-      calories
+      calories,
+      weightKg
+    });
+  };
+  const updateSummaryDuration = newDuration => {
+    setSummary(s => {
+      const d = Math.max(1, newDuration);
+      const calories = estimateCalories(entries, d, s.weightKg);
+      return {
+        ...s,
+        durationMin: d,
+        calories
+      };
     });
   };
   if (summary) {
@@ -1995,23 +2056,46 @@ function WorkoutLogger({
       }
     }, session.name), /*#__PURE__*/React.createElement("div", {
       style: {
-        display: "flex",
-        gap: 24,
-        marginBottom: 28
+        color: COLORS.muted,
+        fontSize: 12,
+        marginBottom: 12,
+        maxWidth: 280
       }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, "Durée calculée à partir de tes vrais temps de repos mesurés + une estimation du temps de levage (~3s/répétition). Corrige si besoin."), /*#__PURE__*/React.createElement("div", {
       style: {
-        color: COLORS.accent,
-        fontFamily: "'Playfair Display', serif",
-        fontSize: 26,
-        fontWeight: 700
+        marginBottom: 10
       }
-    }, summary.durationMin, " min"), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("label", {
       style: {
         color: COLORS.muted,
         fontSize: 12
       }
-    }, "Durée")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, "Durée de la séance (min)"), /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      value: summary.durationMin,
+      onChange: e => updateSummaryDuration(parseInt(e.target.value) || 1),
+      style: {
+        display: "block",
+        margin: "6px auto 0",
+        width: 90,
+        padding: 8,
+        textAlign: "center",
+        borderRadius: 8,
+        fontFamily: "'Playfair Display', serif",
+        fontSize: 20,
+        fontWeight: 700,
+        background: COLORS.surface2,
+        border: `1px solid ${COLORS.border}`,
+        color: COLORS.accent
+      }
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 24,
+        marginBottom: 28,
+        marginTop: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
         color: COLORS.accent,
         fontFamily: "'Playfair Display', serif",
@@ -2024,7 +2108,11 @@ function WorkoutLogger({
         fontSize: 12
       }
     }, "kcal estimées"))), /*#__PURE__*/React.createElement(Btn, {
-      onClick: () => onFinish(summary.log),
+      onClick: () => onFinish({
+        ...summary.logBase,
+        durationMin: summary.durationMin,
+        calories: summary.calories
+      }),
       style: {
         width: "100%",
         maxWidth: 280
@@ -2045,7 +2133,7 @@ function WorkoutLogger({
       display: "flex",
       justifyContent: "space-between",
       alignItems: "center",
-      marginBottom: 16
+      marginBottom: 8
     }
   }, /*#__PURE__*/React.createElement("h2", {
     style: {
@@ -2061,7 +2149,31 @@ function WorkoutLogger({
       color: COLORS.muted,
       cursor: "pointer"
     }
-  }, /*#__PURE__*/React.createElement("span", null, "✕"))), entries.map(e => /*#__PURE__*/React.createElement(Card, {
+  }, /*#__PURE__*/React.createElement("span", null, "✕"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: COLORS.muted,
+      fontSize: 12
+    }
+  }, "Date de la séance"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    value: logDate,
+    onChange: e => setLogDate(e.target.value),
+    style: {
+      padding: 6,
+      borderRadius: 8,
+      background: COLORS.surface2,
+      border: `1px solid ${COLORS.border}`,
+      color: COLORS.text,
+      fontSize: 13
+    }
+  })), entries.map(e => /*#__PURE__*/React.createElement(Card, {
     key: e.entryId,
     style: {
       marginBottom: 14
@@ -2220,16 +2332,15 @@ function WorkoutLogger({
     }
   }, "Série ", idx + 1), /*#__PURE__*/React.createElement("input", {
     type: "number",
+    placeholder: `${e.targetReps}`,
     value: s.reps,
-    onChange: ev => updateSet(e.entryId, idx, {
-      reps: parseInt(ev.target.value) || 0
-    }),
+    onChange: ev => updateSetReps(e.entryId, idx, ev.target.value),
     style: {
       width: 56,
       padding: 6,
       borderRadius: 8,
       background: COLORS.surface2,
-      border: `1px solid ${COLORS.border}`,
+      border: `1px solid ${s.completed ? COLORS.accent : COLORS.border}`,
       color: COLORS.text
     }
   }), /*#__PURE__*/React.createElement("span", {
@@ -2237,14 +2348,12 @@ function WorkoutLogger({
       color: COLORS.muted,
       fontSize: 12
     }
-  }, "reps"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => updateSet(e.entryId, idx, {
-      completed: !s.completed
-    }),
+  }, "reps"), /*#__PURE__*/React.createElement("span", {
+    title: s.completed ? "Validée" : "Pas encore renseignée",
     style: {
       marginLeft: "auto",
-      width: 32,
-      height: 32,
+      width: 28,
+      height: 28,
       borderRadius: 8,
       border: `1px solid ${s.completed ? COLORS.accent : COLORS.border}`,
       background: s.completed ? COLORS.accent : "transparent",
@@ -2252,9 +2361,29 @@ function WorkoutLogger({
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      cursor: "pointer"
+      fontSize: 13
     }
-  }, /*#__PURE__*/React.createElement("span", null, "✓"))))), /*#__PURE__*/React.createElement("div", {
+  }, s.completed ? "✓" : "–"), e.setsDone.length > 1 && /*#__PURE__*/React.createElement("button", {
+    onClick: () => removeSetRow(e.entryId, idx),
+    style: {
+      background: "none",
+      border: "none",
+      color: COLORS.muted,
+      cursor: "pointer",
+      fontSize: 13,
+      padding: 4
+    },
+    title: "Retirer cette série"
+  }, "✕"))), /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    style: {
+      alignSelf: "flex-start",
+      padding: "6px 12px",
+      fontSize: 12,
+      marginTop: 2
+    },
+    onClick: () => addSetRow(e.entryId)
+  }, "+ Ajouter une série")), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 10
     }
@@ -2276,64 +2405,37 @@ function WorkoutLogger({
       rpe: r
     }),
     color: r >= 5 ? COLORS.danger : r >= 4 ? "#FFB35B" : COLORS.accent
-  }, r)))), /*#__PURE__*/React.createElement("input", {
-    placeholder: "Note (douleur, sensation...)",
-    value: e.note,
-    onChange: ev => updateEntry(e.entryId, {
-      note: ev.target.value
-    }),
+  }, r)))), /*#__PURE__*/React.createElement("div", {
     style: {
-      width: "100%",
-      padding: 8,
-      borderRadius: 8,
-      marginTop: 10,
-      fontSize: 13,
-      background: COLORS.surface2,
-      border: `1px solid ${COLORS.border}`,
-      color: COLORS.text
+      marginTop: 12,
+      padding: 12,
+      borderRadius: 10,
+      background: rest && rest.entryId === e.entryId ? COLORS.accent + "22" : COLORS.surface2,
+      border: `1px solid ${rest && rest.entryId === e.entryId ? COLORS.accent : COLORS.border}`
     }
-  }))), /*#__PURE__*/React.createElement(Btn, {
-    onClick: finish,
+  }, rest && rest.entryId === e.entryId ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
-      width: "100%",
-      marginTop: 6,
-      marginBottom: 24
+      color: COLORS.muted,
+      fontSize: 11,
+      marginBottom: 2
     }
-  }, "Terminer la séance"), rest && /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "fixed",
-      left: 12,
-      right: 12,
-      bottom: 16,
-      background: COLORS.surface2,
-      border: `1px solid ${COLORS.accent}55`,
-      borderRadius: 16,
-      padding: "14px 16px",
-      boxShadow: "0 8px 24px #0008",
-      zIndex: 60
-    }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, "Repos en cours"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "space-between",
       alignItems: "center"
     }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: COLORS.muted,
-      fontSize: 11
-    }
-  }, "Repos · ", rest.label), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: COLORS.accent,
       fontFamily: "'Playfair Display', serif",
       fontSize: 28,
       fontWeight: 700
     }
-  }, Math.floor(rest.secondsLeft / 60), ":", String(rest.secondsLeft % 60).padStart(2, "0"))), /*#__PURE__*/React.createElement("div", {
+  }, Math.floor(rest.secondsLeft / 60), ":", String(rest.secondsLeft % 60).padStart(2, "0")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      gap: 8
+      gap: 6
     }
   }, /*#__PURE__*/React.createElement("button", {
     onClick: () => setRest(r => ({
@@ -2350,7 +2452,7 @@ function WorkoutLogger({
       fontSize: 12
     }
   }, "-15s"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setRest(null),
+    onClick: endRest,
     style: {
       background: COLORS.accent,
       border: "none",
@@ -2376,7 +2478,48 @@ function WorkoutLogger({
       cursor: "pointer",
       fontSize: 12
     }
-  }, "+15s")))));
+  }, "+15s")))) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: COLORS.muted,
+      fontSize: 12
+    }
+  }, "Repos suggéré : ", suggestRestSeconds(e.exerciseId, e.targetReps, e.rpe, customExercises), "s"), /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    style: {
+      padding: "6px 12px",
+      fontSize: 12
+    },
+    onClick: () => startRest(e)
+  }, "▶ Démarrer le repos"))), /*#__PURE__*/React.createElement("input", {
+    placeholder: "Note (douleur, sensation...)",
+    value: e.note,
+    onChange: ev => updateEntry(e.entryId, {
+      note: ev.target.value
+    }),
+    style: {
+      width: "100%",
+      padding: 8,
+      borderRadius: 8,
+      marginTop: 10,
+      fontSize: 13,
+      background: COLORS.surface2,
+      border: `1px solid ${COLORS.border}`,
+      color: COLORS.text
+    }
+  }))), /*#__PURE__*/React.createElement(Btn, {
+    onClick: finish,
+    style: {
+      width: "100%",
+      marginTop: 6,
+      marginBottom: 24
+    }
+  }, "Terminer la séance"));
 }
 
 /* ---------------------------------------------------------------
@@ -2559,79 +2702,329 @@ function SeancesView({
   }));
 }
 function HistoriqueView({
-  logs
+  logs,
+  setLogs,
+  runs,
+  setRuns,
+  bodyweight,
+  settings
 }) {
-  const sorted = [...logs].sort((a, b) => a.date < b.date ? 1 : -1);
+  const [editingLogId, setEditingLogId] = useState(null);
+  const [addingRun, setAddingRun] = useState(false);
+  const [newRun, setNewRun] = useState({
+    date: todayISO(),
+    durationMin: 30,
+    distanceKm: 5
+  });
+  const deleteLog = id => setLogs(prev => prev.filter(l => l.id !== id));
+  const deleteRun = id => setRuns(prev => prev.filter(r => r.id !== id));
+  const updateLogDuration = (id, newDuration) => {
+    setLogs(prev => prev.map(l => {
+      if (l.id !== id) return l;
+      const d = Math.max(1, newDuration);
+      const weightKg = getReferenceWeight(bodyweight, settings);
+      const calories = estimateCalories(l.entries, d, weightKg);
+      return {
+        ...l,
+        durationMin: d,
+        calories
+      };
+    }));
+  };
+  const saveRun = () => {
+    setRuns(prev => [...prev, {
+      id: uid(),
+      ...newRun
+    }]);
+    setAddingRun(false);
+    setNewRun({
+      date: todayISO(),
+      durationMin: 30,
+      distanceKm: 5
+    });
+  };
+  const items = [...logs.map(l => ({
+    ...l,
+    _type: "gym"
+  })), ...runs.map(r => ({
+    ...r,
+    _type: "run"
+  }))].sort((a, b) => a.date < b.date ? 1 : -1);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       padding: 16,
       paddingBottom: 90
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 16
     }
   }, /*#__PURE__*/React.createElement("h1", {
     style: {
       fontFamily: "'Playfair Display', serif",
       color: COLORS.text,
       fontSize: 22,
-      marginBottom: 16
+      margin: 0
     }
-  }, "Historique"), sorted.length === 0 && /*#__PURE__*/React.createElement(Card, {
+  }, "Historique"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setAddingRun(true),
     style: {
-      color: COLORS.muted,
-      textAlign: "center"
+      padding: "8px 12px",
+      fontSize: 13
     }
-  }, "Aucune séance enregistrée pour l'instant."), sorted.map(log => /*#__PURE__*/React.createElement(Card, {
-    key: log.id,
+  }, "🏃 + Course")), addingRun && /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 12
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "flex",
-      justifyContent: "space-between"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
       color: COLORS.text,
       fontWeight: 700,
-      fontFamily: "'Playfair Display', serif"
+      marginBottom: 8
     }
-  }, log.sessionName), /*#__PURE__*/React.createElement("div", {
+  }, "Nouvelle course"), /*#__PURE__*/React.createElement("div", {
     style: {
-      color: COLORS.muted,
-      fontSize: 12
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap",
+      marginBottom: 10
     }
-  }, fmtDate(log.date))), (log.durationMin || log.calories) && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("label", {
     style: {
-      color: COLORS.accent,
-      fontSize: 12,
-      marginTop: 4
-    }
-  }, log.durationMin ? `${log.durationMin} min` : "", log.durationMin && log.calories ? " · " : "", log.calories ? `🔥 ${log.calories} kcal` : ""), log.entries.map((e, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    style: {
-      marginTop: 8,
-      fontSize: 13
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: COLORS.text
-    }
-  }, e.name, " — ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: COLORS.accent,
-      fontFamily: "'Playfair Display', serif"
-    }
-  }, e.weight), " ", /*#__PURE__*/React.createElement("span", {
-    style: {
+      fontSize: 11,
       color: COLORS.muted
     }
-  }, "(", e.setsDone.filter(s => s.completed).length, "/", e.setsDone.length, " séries · RPE ", e.rpe, ")")), e.note && /*#__PURE__*/React.createElement("div", {
+  }, "Date", /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    value: newRun.date,
+    onChange: e => setNewRun(r => ({
+      ...r,
+      date: e.target.value
+    })),
+    style: {
+      display: "block",
+      padding: 8,
+      borderRadius: 8,
+      background: COLORS.surface2,
+      border: `1px solid ${COLORS.border}`,
+      color: COLORS.text
+    }
+  })), /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: COLORS.muted
+    }
+  }, "Durée (min)", /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    value: newRun.durationMin,
+    onChange: e => setNewRun(r => ({
+      ...r,
+      durationMin: parseInt(e.target.value) || 0
+    })),
+    style: {
+      display: "block",
+      width: 80,
+      padding: 8,
+      borderRadius: 8,
+      background: COLORS.surface2,
+      border: `1px solid ${COLORS.border}`,
+      color: COLORS.text
+    }
+  })), /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: COLORS.muted
+    }
+  }, "Distance (km)", /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    step: "0.1",
+    value: newRun.distanceKm,
+    onChange: e => setNewRun(r => ({
+      ...r,
+      distanceKm: parseFloat(e.target.value) || 0
+    })),
+    style: {
+      display: "block",
+      width: 80,
+      padding: 8,
+      borderRadius: 8,
+      background: COLORS.surface2,
+      border: `1px solid ${COLORS.border}`,
+      color: COLORS.text
+    }
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    style: {
+      flex: 1
+    },
+    onClick: () => setAddingRun(false)
+  }, "Annuler"), /*#__PURE__*/React.createElement(Btn, {
+    style: {
+      flex: 1
+    },
+    onClick: saveRun
+  }, "Enregistrer"))), items.length === 0 && /*#__PURE__*/React.createElement(Card, {
     style: {
       color: COLORS.muted,
-      fontSize: 12,
-      fontStyle: "italic"
+      textAlign: "center"
     }
-  }, "“", e.note, "”"))))));
+  }, "Rien d'enregistré pour l'instant."), items.map(item => {
+    if (item._type === "run") {
+      const pace = item.distanceKm > 0 ? item.durationMin / item.distanceKm : 0;
+      const paceMin = Math.floor(pace);
+      const paceSec = Math.round((pace - paceMin) * 60);
+      return /*#__PURE__*/React.createElement(Card, {
+        key: item.id,
+        style: {
+          marginBottom: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start"
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          color: COLORS.text,
+          fontWeight: 700,
+          fontFamily: "'Playfair Display', serif"
+        }
+      }, "🏃 Course"), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 8
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          color: COLORS.muted,
+          fontSize: 12
+        }
+      }, fmtDate(item.date)), /*#__PURE__*/React.createElement("button", {
+        onClick: () => deleteRun(item.id),
+        style: {
+          background: "none",
+          border: "none",
+          color: COLORS.danger,
+          cursor: "pointer"
+        }
+      }, /*#__PURE__*/React.createElement("span", null, "🗑")))), /*#__PURE__*/React.createElement("div", {
+        style: {
+          color: COLORS.accent,
+          fontSize: 13,
+          marginTop: 6
+        }
+      }, item.distanceKm, " km · ", item.durationMin, " min · ", paceMin, ":", String(paceSec).padStart(2, "0"), " /km"));
+    }
+    const log = item;
+    return /*#__PURE__*/React.createElement(Card, {
+      key: log.id,
+      style: {
+        marginBottom: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: COLORS.text,
+        fontWeight: 700,
+        fontFamily: "'Playfair Display', serif"
+      }
+    }, log.sessionName), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: COLORS.muted,
+        fontSize: 12
+      }
+    }, fmtDate(log.date)), /*#__PURE__*/React.createElement("button", {
+      onClick: () => deleteLog(log.id),
+      style: {
+        background: "none",
+        border: "none",
+        color: COLORS.danger,
+        cursor: "pointer"
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "🗑")))), editingLogId === log.id ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        marginTop: 6
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      defaultValue: log.durationMin || 45,
+      onBlur: e => {
+        updateLogDuration(log.id, parseInt(e.target.value) || 45);
+        setEditingLogId(null);
+      },
+      autoFocus: true,
+      style: {
+        width: 70,
+        padding: 6,
+        borderRadius: 8,
+        background: COLORS.surface2,
+        border: `1px solid ${COLORS.border}`,
+        color: COLORS.text
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: COLORS.muted,
+        fontSize: 12
+      }
+    }, "min")) : (log.durationMin || log.calories) && /*#__PURE__*/React.createElement("div", {
+      onClick: () => setEditingLogId(log.id),
+      style: {
+        color: COLORS.accent,
+        fontSize: 12,
+        marginTop: 4,
+        cursor: "pointer"
+      },
+      title: "Toucher pour modifier la durée"
+    }, log.durationMin ? `${log.durationMin} min` : "", log.durationMin && log.calories ? " · " : "", log.calories ? `🔥 ${log.calories} kcal` : "", " ✏️"), log.entries.map((e, i) => /*#__PURE__*/React.createElement("div", {
+      key: i,
+      style: {
+        marginTop: 8,
+        fontSize: 13
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: COLORS.text
+      }
+    }, e.name, " — ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: COLORS.accent,
+        fontFamily: "'Playfair Display', serif"
+      }
+    }, e.weight), " ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: COLORS.muted
+      }
+    }, "(", e.setsDone.filter(s => s.completed).length, "/", e.setsDone.length, " séries · RPE ", e.rpe, ")")), e.note && /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: COLORS.muted,
+        fontSize: 12,
+        fontStyle: "italic"
+      }
+    }, "“", e.note, "”"))));
+  }));
 }
 function ProgressionView({
   program,
@@ -2939,12 +3332,13 @@ function App() {
   const [bodyweight, setBodyweight] = useState([]);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [customExercises, setCustomExercises] = useState([]);
+  const [runs, setRuns] = useState([]);
   const [storageOk, setStorageOk] = useState(true);
   useEffect(() => {
     (async () => {
-      const [p, l, b, s, c] = await Promise.all([loadKey("program", {
+      const [p, l, b, s, c, r] = await Promise.all([loadKey("program", {
         sessions: []
-      }), loadKey("logs", []), loadKey("bodyweight", []), loadKey("settings", DEFAULT_SETTINGS), loadKey("exercises-custom", [])]);
+      }), loadKey("logs", []), loadKey("bodyweight", []), loadKey("settings", DEFAULT_SETTINGS), loadKey("exercises-custom", []), loadKey("runs", [])]);
       setProgram(p);
       setLogs(l);
       setBodyweight(b);
@@ -2953,6 +3347,7 @@ function App() {
         ...s
       });
       setCustomExercises(c);
+      setRuns(r);
       setLoading(false);
     })();
   }, []);
@@ -2975,6 +3370,9 @@ function App() {
   useEffect(() => {
     if (!loading) track("exercises-custom", customExercises);
   }, [customExercises, loading]);
+  useEffect(() => {
+    if (!loading) track("runs", runs);
+  }, [runs, loading]);
   const addCustomExercise = useCallback(ex => {
     setCustomExercises(prev => prev.some(e => e.id === ex.id) ? prev : [...prev, ex]);
   }, []);
@@ -2987,6 +3385,7 @@ function App() {
     setBodyweight([]);
     setSettings(DEFAULT_SETTINGS);
     setCustomExercises([]);
+    setRuns([]);
   };
   const tabs = [{
     id: "seances",
@@ -3111,7 +3510,12 @@ function App() {
     addCustomExercise: addCustomExercise,
     bodyweight: bodyweight
   }), tab === "historique" && /*#__PURE__*/React.createElement(HistoriqueView, {
-    logs: logs
+    logs: logs,
+    setLogs: setLogs,
+    runs: runs,
+    setRuns: setRuns,
+    bodyweight: bodyweight,
+    settings: settings
   }), tab === "progression" && /*#__PURE__*/React.createElement(ProgressionView, {
     program: program,
     logs: logs,
