@@ -786,6 +786,226 @@ const EXERCISE_LIBRARY = [
   tipsEn: ["Stay braced, do not arch your lower back", "Drive with the glute and squeeze at the top"],
   aliases: ["extension hanche", "extension de hanches", "extension des hanches", "hip extension", "hips extension", "glute kickback machine", "kickback machine", "machine fessiers"]
 }, {
+  id: "adduction_hanches",
+  name: "Adduction des hanches (machine)",
+  primary: "Fessiers",
+  secondary: [],
+  type: "isolation",
+  tips: ["Dos bien calé, mouvement lent et contrôlé", "Ne rebondis pas en fermant les jambes"],
+  nameEn: "Hip adduction (machine)",
+  tipsEn: ["Back supported, slow and controlled", "Do not bounce as you close your legs"],
+  aliases: ["adducteurs", "adduction", "hip adduction", "machine adducteurs", "intérieur cuisses"]
+}, {
+  id: "leg_curl_assis",
+  name: "Leg curl assis",
+  primary: "Ischio-jambiers",
+  secondary: [],
+  type: "isolation",
+  tips: ["Cale bien le bassin contre le siège", "Fléchis jusqu'au bout et reviens lentement"],
+  nameEn: "Seated leg curl",
+  tipsEn: ["Keep your hips pinned to the seat", "Curl all the way and return slowly"],
+  aliases: ["curl jambes assis", "seated leg curl", "ischios assis"]
+}, {
+  id: "leg_curl_allonge",
+  name: "Leg curl allongé",
+  primary: "Ischio-jambiers",
+  secondary: [],
+  type: "isolation",
+  tips: ["Ne décolle pas le bassin du banc", "Contrôle la descente, ne laisse pas tomber la charge"],
+  nameEn: "Lying leg curl",
+  tipsEn: ["Do not lift your hips off the bench", "Control the way down, do not drop the weight"],
+  aliases: ["curl jambes allongé", "lying leg curl", "prone leg curl", "ischios allongé"]
+}, {
+  id: "hip_thrust_machine",
+  name: "Hip thrust à la machine",
+  primary: "Fessiers",
+  secondary: ["Ischio-jambiers"],
+  type: "poly",
+  tips: ["Menton rentré, regard vers l'avant", "Pousse avec les talons et serre les fessiers en haut"],
+  nameEn: "Hip thrust (machine)",
+  tipsEn: ["Chin tucked, eyes forward", "Push through your heels and squeeze the glutes at the top"],
+  aliases: ["hip thrust machine", "pont fessier machine", "glute drive", "glute bridge machine"]
+}, {
+  id: "squat_smith",
+  name: "Squat à la Smith machine",
+  primary: "Quadriceps",
+  secondary: ["Fessiers"],
+  type: "poly",
+  tips: ["Pieds légèrement devant la barre", "Descends au moins jusqu'à la parallèle, dos droit"],
+  nameEn: "Smith machine squat",
+  tipsEn: ["Feet slightly in front of the bar", "Go down to at least parallel, back straight"],
+  aliases: ["smith squat", "squat guidé", "squat multipower", "multipower"]
+}, {
+  id: "fentes_sur_place",
+  name: "Fentes sur place (Smith / haltères)",
+  primary: "Fessiers",
+  secondary: ["Quadriceps"],
+  type: "poly",
+  tips: ["Buste droit, genou avant dans l'axe du pied", "Descends le genou arrière près du sol"],
+  nameEn: "Static lunges (Smith / dumbbells)",
+  tipsEn: ["Torso upright, front knee in line with the foot", "Lower the back knee close to the floor"],
+  aliases: ["fentes statiques", "split squat", "static lunge", "fente smith"]
+}, {
+  id: "fentes_laterales",
+  name: "Fentes latérales",
+  primary: "Fessiers",
+  secondary: ["Quadriceps"],
+  type: "poly",
+  tips: ["Assieds-toi vers le côté, jambe tendue de l'autre côté", "Garde les pieds à plat et la poitrine haute"],
+  nameEn: "Lateral lunges",
+  tipsEn: ["Sit back to one side, other leg straight", "Keep your feet flat and chest up"],
+  aliases: ["fente côté", "side lunge", "lateral lunge", "fente latérale"]
+}, {
+  id: "donkey_kick",
+  name: "Donkey kick",
+  primary: "Fessiers",
+  secondary: ["Ischio-jambiers"],
+  type: "isolation",
+  tips: ["Dos plat, abdos serrés, pas de cambrure", "Monte la jambe pliée et serre le fessier en haut"],
+  nameEn: "Donkey kick",
+  tipsEn: ["Flat back, abs tight, no arching", "Lift the bent leg and squeeze the glute at the top"],
+  aliases: ["donkey kicks", "kick quadrupédie", "coup de pied d'âne", "glute kick"]
+}, {
+  id: "fire_hydrant",
+  name: "Fire hydrant",
+  primary: "Fessiers",
+  secondary: [],
+  type: "isolation",
+  tips: ["Bassin stable, ne tourne pas le buste", "Ouvre le genou sur le côté, mouvement lent"],
+  nameEn: "Fire hydrant",
+  tipsEn: ["Keep your hips stable, do not rotate your torso", "Open the knee out to the side, slow movement"],
+  aliases: ["fire hydrants", "abduction quadrupédie", "hydrant", "ouverture de hanche"]
+}, {
+  id: "developpe_couche_machine",
+  name: "Développé couché à la machine",
+  primary: "Pectoraux",
+  secondary: ["Triceps", "Épaules"],
+  type: "poly",
+  tips: ["Règle le siège : poignées au niveau de la poitrine", "Pousse sans verrouiller complètement les coudes"],
+  nameEn: "Chest press (machine)",
+  tipsEn: ["Set the seat so the handles are at chest level", "Press without fully locking your elbows"],
+  aliases: ["chest press", "presse pectoraux", "convergente", "machine pectoraux"]
+}, {
+  id: "developpe_epaules_machine",
+  name: "Développé épaules à la machine",
+  primary: "Épaules",
+  secondary: ["Triceps"],
+  type: "poly",
+  tips: ["Dos collé au dossier, poignées au niveau des épaules", "Ne cambre pas, pousse vers le haut en expirant"],
+  nameEn: "Shoulder press (machine)",
+  tipsEn: ["Back against the pad, handles at shoulder height", "Do not arch, press up while exhaling"],
+  aliases: ["shoulder press machine", "presse épaules", "épaules machine"]
+}, {
+  id: "pullover_poulie",
+  name: "Pull-over à la poulie",
+  primary: "Dos",
+  secondary: ["Pectoraux"],
+  type: "isolation",
+  tips: ["Bras presque tendus, pense à tirer avec le dos", "Garde le buste gainé, ne balance pas"],
+  nameEn: "Cable pull-over",
+  tipsEn: ["Arms almost straight, think of pulling with your back", "Keep your torso braced, do not swing"],
+  aliases: ["pullover poulie", "straight arm pulldown", "tirage bras tendus", "pull over câble"]
+}, {
+  id: "rowing_machine",
+  name: "Rowing à la machine",
+  primary: "Dos",
+  secondary: ["Biceps"],
+  type: "poly",
+  tips: ["Poitrine contre le support, épaules basses", "Tire les coudes vers l'arrière et serre les omoplates"],
+  nameEn: "Seated row (machine)",
+  tipsEn: ["Chest against the pad, shoulders down", "Pull your elbows back and squeeze your shoulder blades"],
+  aliases: ["row machine", "machine dos", "tirage machine", "seated row"]
+}, {
+  id: "elevation_laterale_poulie",
+  name: "Élévation latérale à la poulie",
+  primary: "Épaules",
+  secondary: [],
+  type: "isolation",
+  tips: ["Monte jusqu'à la hauteur de l'épaule, coude légèrement fléchi", "Pas d'élan, contrôle la descente"],
+  nameEn: "Cable lateral raise",
+  tipsEn: ["Raise to shoulder height, slightly bent elbow", "No momentum, control the descent"],
+  aliases: ["lateral raise cable", "élévation côté poulie", "élévations latérales câble"]
+}, {
+  id: "curl_machine",
+  name: "Curl à la machine",
+  primary: "Biceps",
+  secondary: [],
+  type: "isolation",
+  tips: ["Coudes bien alignés avec l'axe de la machine", "Monte en contractant, redescends lentement"],
+  nameEn: "Biceps curl (machine)",
+  tipsEn: ["Elbows aligned with the machine axis", "Curl up with a squeeze, lower slowly"],
+  aliases: ["curl biceps machine", "preacher machine", "biceps machine"]
+}, {
+  id: "triceps_machine",
+  name: "Extension triceps à la machine",
+  primary: "Triceps",
+  secondary: [],
+  type: "isolation",
+  tips: ["Garde les coudes fixes et près du corps", "Tends complètement les bras sans verrouiller"],
+  nameEn: "Triceps extension (machine)",
+  tipsEn: ["Keep your elbows fixed and close to your body", "Extend fully without locking out"],
+  aliases: ["triceps machine", "dips machine", "extension triceps machine"]
+}, {
+  id: "gainage_lateral",
+  name: "Gainage latéral",
+  primary: "Abdominaux",
+  secondary: [],
+  type: "isolation",
+  tips: ["Corps aligné de la tête aux pieds", "Coude sous l'épaule, bassin haut"],
+  nameEn: "Side plank",
+  tipsEn: ["Body in a straight line from head to feet", "Elbow under the shoulder, hips high"],
+  aliases: ["planche latérale", "side plank", "gainage côté", "planche sur le côté"]
+}, {
+  id: "mountain_climbers",
+  name: "Mountain climbers",
+  primary: "Abdominaux",
+  secondary: ["Épaules"],
+  type: "poly",
+  tips: ["Mains sous les épaules, dos plat", "Ramène les genoux vers la poitrine à un rythme régulier"],
+  nameEn: "Mountain climbers",
+  tipsEn: ["Hands under your shoulders, flat back", "Drive your knees toward your chest at a steady pace"],
+  aliases: ["grimpeur", "escalade", "montée de genoux au sol", "mountain climber"]
+}, {
+  id: "pallof_press",
+  name: "Pallof press",
+  primary: "Abdominaux",
+  secondary: [],
+  type: "isolation",
+  tips: ["Résiste à la rotation, bassin et épaules face à l'avant", "Pousse les mains droit devant, sans te laisser tourner"],
+  nameEn: "Pallof press",
+  tipsEn: ["Resist rotation, hips and shoulders facing forward", "Press your hands straight out without letting yourself twist"],
+  aliases: ["pallof", "anti-rotation", "rotation poulie", "russian twist poulie"]
+}, {
+  id: "shrug_barre",
+  name: "Haussements d'épaules à la barre",
+  primary: "Trapèzes",
+  secondary: [],
+  type: "isolation",
+  tips: ["Monte les épaules vers les oreilles, sans rouler", "Marque une pause en haut puis redescends lentement"],
+  nameEn: "Barbell shrug",
+  tipsEn: ["Lift your shoulders toward your ears, no rolling", "Pause at the top then lower slowly"],
+  aliases: ["shrug barre", "shrugs", "trapèzes barre", "barbell shrugs"]
+}, {
+  id: "curl_inverse",
+  name: "Curl inversé",
+  primary: "Avant-bras",
+  secondary: ["Biceps"],
+  type: "isolation",
+  tips: ["Prise pronation, poignets neutres", "Garde les coudes collés au corps"],
+  nameEn: "Reverse curl",
+  tipsEn: ["Overhand grip, neutral wrists", "Keep your elbows tucked in"],
+  aliases: ["reverse curl", "curl prise pronation", "curl pronation", "brachio-radial"]
+}, {
+  id: "suspension_barre",
+  name: "Suspension à la barre (dead hang)",
+  primary: "Avant-bras",
+  secondary: ["Dos"],
+  type: "isolation",
+  tips: ["Épaules actives, ne pends pas passivement", "Serre la barre fort et respire calmement"],
+  nameEn: "Dead hang",
+  tipsEn: ["Keep your shoulders active, do not hang passively", "Grip the bar tightly and breathe calmly"],
+  aliases: ["dead hang", "suspension", "hanging", "grip hold", "tenue de barre"]
+}, {
   id: "squat_sumo",
   name: "Squat sumo",
   primary: "Fessiers",
