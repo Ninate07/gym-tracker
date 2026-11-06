@@ -1852,6 +1852,41 @@ function estimateRunningCalories(distanceKm, durationMin, weightKg, type = "cour
   const kcal = met * 3.5 * weightKg / 200 * durationMin;
   return Math.round(kcal);
 }
+// --- Cardio en salle : vélo et rameur ---
+// Estimation par MET (Compendium of Physical Activities) : kcal = MET × poids (kg) × durée (h).
+// Le MET est interpolé à partir de la puissance (W) si elle est connue, sinon :
+//  - vélo : à partir de la vitesse moyenne (dépend de la machine, donc moins précis)
+//  - rameur : puissance déduite du temps aux 500 m (formule Concept2 : W = 2,80 / (s/m)^3)
+const BIKE_WATT_MET = [[40, 3.5], [75, 4.8], [95, 6.8], [130, 8.8], [180, 11.0]];
+const BIKE_SPEED_MET = [[12, 4.0], [17.6, 6.8], [20.8, 8.0], [24, 10.0], [28, 12.0]];
+const ROW_WATT_MET = [[50, 4.8], [100, 7.0], [150, 8.5], [200, 12.0]];
+function interpMet(points, x) {
+  if (x <= points[0][0]) return points[0][1];
+  for (let i = 1; i < points.length; i++) {
+    if (x <= points[i][0]) {
+      const [x0, y0] = points[i - 1], [x1, y1] = points[i];
+      return y0 + (y1 - y0) * (x - x0) / (x1 - x0);
+    }
+  }
+  return points[points.length - 1][1];
+}
+function rowerWattsFromSplit(distanceM, durationMin) {
+  if (!distanceM || !durationMin) return 0;
+  const secPerMeter = durationMin * 60 / distanceM;
+  return 2.80 / Math.pow(secPerMeter, 3);
+}
+function estimateCardioCalories(machine, speedKmh, distanceM, durationMin, weightKg, watts) {
+  if (!durationMin) return 0;
+  let met;
+  if (machine === "rameur") {
+    const w = watts > 0 ? watts : rowerWattsFromSplit(distanceM, durationMin);
+    if (!w) return 0;
+    met = interpMet(ROW_WATT_MET, w);
+  } else {
+    met = watts > 0 ? interpMet(BIKE_WATT_MET, watts) : interpMet(BIKE_SPEED_MET, speedKmh || 0);
+  }
+  return Math.round(met * weightKg * durationMin / 60);
+}
 function getReferenceWeight(bodyweight, settings) {
   if (bodyweight && bodyweight.length > 0) {
     return bodyweight[bodyweight.length - 1].weight;
@@ -3470,6 +3505,194 @@ function SeancesView({
     onClose: () => setActiveSession(null)
   }));
 }
+function CardioForm({
+  settings,
+  weightKg,
+  onCancel,
+  onSave
+}) {
+  const h = React.createElement;
+  const [f, setF] = useState({
+    machine: "velo",
+    date: todayISO(),
+    durationMin: 30,
+    speedKmh: 20,
+    distanceM: 5000,
+    watts: 0,
+    resistance: 0,
+    spm: 0
+  });
+  const isBike = f.machine === "velo";
+  const distanceKm = isBike ? f.speedKmh * f.durationMin / 60 : f.distanceM / 1000;
+  const speedKmh = isBike ? f.speedKmh : f.durationMin > 0 ? distanceKm / (f.durationMin / 60) : 0;
+  const splitSec = !isBike && f.distanceM > 0 ? f.durationMin * 60 / (f.distanceM / 500) : 0;
+  const splitLabel = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+  const speedUnit = settings.distanceUnit === "mi" ? "mph" : "km/h";
+  const inputStyle = {
+    display: "block",
+    width: 90,
+    padding: 8,
+    borderRadius: 8,
+    background: COLORS.surface2,
+    border: `1px solid ${COLORS.border}`,
+    color: COLORS.text
+  };
+  const labelStyle = {
+    fontSize: 11,
+    color: COLORS.muted
+  };
+  const set = patch => setF(prev => ({
+    ...prev,
+    ...patch
+  }));
+  const save = () => {
+    const calories = estimateCardioCalories(f.machine, speedKmh, f.distanceM, f.durationMin, weightKg, f.watts);
+    onSave({
+      id: uid(),
+      activity: f.machine,
+      type: f.machine,
+      date: f.date,
+      durationMin: f.durationMin,
+      distanceKm,
+      speedKmh,
+      watts: f.watts || 0,
+      resistance: f.resistance || 0,
+      spm: f.spm || 0,
+      calories
+    });
+  };
+  return h(Card, {
+    style: {
+      marginBottom: 12
+    }
+  }, h("div", {
+    style: {
+      color: COLORS.text,
+      fontWeight: 700,
+      marginBottom: 8
+    }
+  }, t("Nouveau cardio en salle", "New gym cardio")), h("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      marginBottom: 10
+    }
+  }, h(Pill, {
+    active: isBike,
+    onClick: () => set({
+      machine: "velo"
+    })
+  }, "🚴 ", t("Vélo", "Bike")), h(Pill, {
+    active: !isBike,
+    onClick: () => set({
+      machine: "rameur"
+    })
+  }, "🚣 ", t("Rameur", "Rowing machine"))), h("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap",
+      marginBottom: 10
+    }
+  }, h("label", {
+    style: labelStyle
+  }, t("Date", "Date"), h("input", {
+    type: "date",
+    value: f.date,
+    onChange: e => set({
+      date: e.target.value
+    }),
+    style: {
+      ...inputStyle,
+      width: "auto"
+    }
+  })), h("label", {
+    style: labelStyle
+  }, t("Durée", "Duration"), h("div", {
+    style: {
+      marginTop: 2
+    }
+  }, h(DurationField, {
+    minutes: f.durationMin,
+    onChange: v => set({
+      durationMin: v
+    })
+  }))), isBike ? h("label", {
+    style: labelStyle
+  }, t("Vitesse moyenne", "Average speed"), " (", speedUnit, ")", h(NumField, {
+    step: "0.5",
+    value: roundTo(toDisplayDistance(f.speedKmh, settings), 1),
+    onCommit: v => set({
+      speedKmh: toStoredDistance(v, settings)
+    }),
+    style: inputStyle
+  })) : h("label", {
+    style: labelStyle
+  }, t("Distance", "Distance"), " (m)", h(NumField, {
+    step: "50",
+    value: f.distanceM,
+    onCommit: v => set({
+      distanceM: v
+    }),
+    style: inputStyle
+  }))), h("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap",
+      marginBottom: 10
+    }
+  }, h("label", {
+    style: labelStyle
+  }, t("Puissance moy. (W)", "Avg power (W)"), h(NumField, {
+    step: "5",
+    value: f.watts,
+    onCommit: v => set({
+      watts: v
+    }),
+    style: inputStyle
+  })), isBike ? h("label", {
+    style: labelStyle
+  }, t("Résistance / niveau", "Resistance / level"), h(NumField, {
+    step: "1",
+    value: f.resistance,
+    onCommit: v => set({
+      resistance: v
+    }),
+    style: inputStyle
+  })) : h("label", {
+    style: labelStyle
+  }, t("Cadence (coups/min)", "Stroke rate (spm)"), h(NumField, {
+    step: "1",
+    value: f.spm,
+    onCommit: v => set({
+      spm: v
+    }),
+    style: inputStyle
+  }))), h("div", {
+    style: {
+      color: COLORS.muted,
+      fontSize: 11,
+      marginBottom: 10
+    }
+  }, t("Optionnel : mets 0 si ta machine ne l'affiche pas.", "Optional: leave 0 if your machine does not show it."), h("br", null), isBike ? `${t("Distance estimée", "Estimated distance")} : ${roundTo(toDisplayDistance(distanceKm, settings), 2)} ${settings.distanceUnit}` : `${t("Temps aux 500 m", "Split per 500 m")} : ${splitSec ? splitLabel(splitSec) : "-"} · ${t("Vitesse", "Speed")} ${roundTo(toDisplayDistance(speedKmh, settings), 1)} ${speedUnit}`), h("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, h(Btn, {
+    variant: "ghost",
+    style: {
+      flex: 1
+    },
+    onClick: onCancel
+  }, t("Annuler", "Cancel")), h(Btn, {
+    style: {
+      flex: 1
+    },
+    onClick: save
+  }, t("Enregistrer", "Save"))));
+}
 function HistoriqueView({
   logs,
   setLogs,
@@ -3483,6 +3706,7 @@ function HistoriqueView({
   const [editingDurationId, setEditingDurationId] = useState(null);
   const [editingLog, setEditingLog] = useState(null); // séance ouverte dans l'éditeur complet
   const [addingRun, setAddingRun] = useState(false);
+  const [addingCardio, setAddingCardio] = useState(false);
   const [newRun, setNewRun] = useState({
     date: todayISO(),
     durationMin: 30,
@@ -3564,13 +3788,32 @@ function HistoriqueView({
       fontSize: 22,
       margin: 0
     }
-  }, t("Historique", "History")), /*#__PURE__*/React.createElement(Btn, {
+  }, t("Historique", "History")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
     onClick: () => setAddingRun(true),
     style: {
       padding: "8px 12px",
       fontSize: 13
     }
-  }, "🏃 + ", t("Course", "Run"))), addingRun && /*#__PURE__*/React.createElement(Card, {
+  }, "🏃 + ", t("Course", "Run")), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setAddingCardio(true),
+    style: {
+      padding: "8px 12px",
+      fontSize: 13
+    }
+  }, "🚴 + ", t("Cardio", "Cardio")))), addingCardio && /*#__PURE__*/React.createElement(CardioForm, {
+    settings: settings,
+    weightKg: getReferenceWeight(bodyweight, settings),
+    onCancel: () => setAddingCardio(false),
+    onSave: entry => {
+      setRuns(prev => [...prev, entry]);
+      setAddingCardio(false);
+    }
+  }), addingRun && /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 12
     }
@@ -3809,6 +4052,64 @@ function HistoriqueView({
       textAlign: "center"
     }
   }, t("Rien d'enregistré pour l'instant.", "Nothing logged yet.")), items.map(item => {
+    if (item._type === "run" && (item.activity === "velo" || item.activity === "rameur")) {
+      const isBike = item.activity === "velo";
+      const speedUnit = settings.distanceUnit === "mi" ? "mph" : "km/h";
+      const splitSec = !isBike && item.distanceKm > 0 ? item.durationMin * 60 / (item.distanceKm * 1000 / 500) : 0;
+      const splitLabel = `${Math.floor(splitSec / 60)}:${String(Math.round(splitSec % 60)).padStart(2, "0")}`;
+      const speedTxt = `${roundTo(toDisplayDistance(item.speedKmh || 0, settings), 1)} ${speedUnit}`;
+      const main = isBike ? `${speedTxt} · ${roundTo(toDisplayDistance(item.distanceKm, settings), 2)} ${settings.distanceUnit} · ${item.durationMin} min` : `${Math.round(item.distanceKm * 1000)} m · ${item.durationMin} min · ${splitLabel} /500 m · ${speedTxt}`;
+      const extras = [item.watts > 0 ? `${item.watts} W` : null, isBike && item.resistance > 0 ? `${t("Résistance", "Resistance")} ${item.resistance}` : null, !isBike && item.spm > 0 ? `${item.spm} ${t("coups/min", "spm")}` : null].filter(Boolean).join(" · ");
+      return /*#__PURE__*/React.createElement(Card, {
+        key: item.id,
+        style: {
+          marginBottom: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start"
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          color: COLORS.text,
+          fontWeight: 700,
+          fontFamily: "'Playfair Display', serif"
+        }
+      }, isBike ? "🚴 " + t("Vélo", "Bike") : "🚣 " + t("Rameur", "Rowing machine")), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 8
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          color: COLORS.muted,
+          fontSize: 12
+        }
+      }, fmtDate(item.date)), /*#__PURE__*/React.createElement("button", {
+        onClick: () => deleteRun(item.id),
+        style: {
+          background: "none",
+          border: "none",
+          color: COLORS.danger,
+          cursor: "pointer"
+        }
+      }, /*#__PURE__*/React.createElement("span", null, "🗑")))), /*#__PURE__*/React.createElement("div", {
+        style: {
+          color: COLORS.accent,
+          fontSize: 13,
+          marginTop: 6
+        }
+      }, main, " · 🔥 ", item.calories, " kcal"), extras && /*#__PURE__*/React.createElement("div", {
+        style: {
+          color: COLORS.muted,
+          fontSize: 12,
+          marginTop: 2
+        }
+      }, extras));
+    }
     if (item._type === "run") {
       const displayDist = toDisplayDistance(item.distanceKm, settings);
       const pace = displayDist > 0 ? item.durationMin / displayDist : 0;
